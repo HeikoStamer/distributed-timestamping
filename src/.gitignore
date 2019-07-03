@@ -1,0 +1,8 @@
+.Tpo
+.deps/
+.dirstamp
+dotsd
+dots_config.h
+stamp-h1
+*.o
+*.1
