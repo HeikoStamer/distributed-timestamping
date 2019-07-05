@@ -222,8 +222,7 @@ static int tcpip_mhd_callback
 			(strncmp(url, "/submit", 7) != 0) &&
 			(strncmp(url, "/input", 6) != 0))
 		{
-			std::cerr << "WARNING: bad URL requested" << std::endl;
-			return MHD_NO;
+			std::cerr << "WARNING: unknown URL requested" << std::endl;
 		}
 		size_t con_size = sizeof(tcpip_mhd_connection_info);
 		tcpip_mhd_connection_info *con_info;
@@ -1211,7 +1210,6 @@ int tcpip_io
 						" P_" << pi->first << std::endl;
 					tcpip_pipe2socket_out.erase(pi->first);
 					tcpip_pipe2socket_in.erase(pi->first);
-// TODO: schedule reconnect task
 					break;
 				}
 				else
@@ -1305,7 +1303,6 @@ int tcpip_io
 						" for P_" << pi->first << std::endl;
 					tcpip_broadcast_pipe2socket_out.erase(pi->first);
 					tcpip_broadcast_pipe2socket_in.erase(pi->first);
-// TODO: schedule reconnect task
 					break;
 				}
 				else
@@ -1439,7 +1436,6 @@ int tcpip_io
 									" for P_" << i << std::endl;
 								tcpip_broadcast_pipe2socket_out.erase(i);
 								tcpip_broadcast_pipe2socket_in.erase(i);
-// TODO: schedule reconnect task
 								break;
 							}
 							else
@@ -1534,7 +1530,6 @@ int tcpip_io
 									" collapsed for P_" << i << std::endl;
 								tcpip_broadcast_pipe2socket_out.erase(i);
 								tcpip_broadcast_pipe2socket_in.erase(i);
-// TODO: schedule reconnect task
 								break;
 							}
 							else
