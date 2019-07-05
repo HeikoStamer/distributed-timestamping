@@ -61,6 +61,7 @@ typedef struct
 {
 	int ct;
 	char *sig;
+	size_t len;
 	struct MHD_PostProcessor *pp;
 } tcpip_mhd_connection_info;
 static const char *tcpip_mhd_defaultpage = "<html><body>"
@@ -158,12 +159,12 @@ static int tcpip_mhd_iterate_post
 	{
 		if ((size > 0) && (size <= 4096))
 		{
-			char *sig = (char*)malloc(4097);
-			if (sig == NULL)
+			if (con_info->sig == NULL)
+				con_info->sig = (char*)malloc(4097);
+			if (con_info->sig == NULL)
 				return MHD_NO;
-			memset(sig, 0, 4097);
-			memcpy(sig, data, size);
-			con_info->sig = sig;
+			memset(con_info->sig, 0, 4097);
+			memcpy(con_info->sig, data, size);
 		}
 		else
 			con_info->sig = NULL;
@@ -211,9 +212,10 @@ static int tcpip_mhd_callback
 		if (con_info == NULL)
 			return MHD_NO;
 		con_info->sig = NULL;
+		con_info->len = 0;
 		if (strcmp(method, "POST") == 0)
 		{
-			con_info->pp = MHD_create_post_processor(con, 1024,
+			con_info->pp = MHD_create_post_processor(con, 512,
 				tcpip_mhd_iterate_post, (void *)con_info);
 			if (con_info->pp == NULL)
 			{
@@ -370,10 +372,18 @@ static int tcpip_mhd_callback
 	{
 		tcpip_mhd_connection_info *con_info =
 			(tcpip_mhd_connection_info*)*con_cls;
-		if (*upload_data_size != 0)
+		if (*upload_data_size > 0)
 		{
-			MHD_post_process(con_info->pp, upload_data,
-                            *upload_data_size);
+			if (con_info->len < 4096)
+				con_info->len += *upload_data_size;
+			else
+			{
+				std::cerr << "WARNING: upload limit" <<
+					" exceeded" << std::endl;
+				return MHD_NO; // upload limit exceeded
+			}
+			MHD_post_process(con_info->pp,
+				upload_data, *upload_data_size);
 			*upload_data_size = 0;
 			return MHD_YES;
 		}
