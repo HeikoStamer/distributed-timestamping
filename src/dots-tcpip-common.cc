@@ -157,13 +157,13 @@ static int tcpip_mhd_iterate_post
 		(tcpip_mhd_connection_info*)cls;
 	if (strcmp(key, "signature") == 0)
 	{
-		if ((size > 0) && (size <= 4096))
+		if ((size > 0) && (size <= DOTS_MAX_SIG_LENGTH))
 		{
 			if (con_info->sig == NULL)
-				con_info->sig = (char*)malloc(4097);
+				con_info->sig = (char*)malloc(DOTS_MAX_SIG_LENGTH + 1);
 			if (con_info->sig == NULL)
 				return MHD_NO;
-			memset(con_info->sig, 0, 4097);
+			memset(con_info->sig, 0, DOTS_MAX_SIG_LENGTH + 1);
 			memcpy(con_info->sig, data, size);
 		}
 		else
@@ -374,12 +374,11 @@ static int tcpip_mhd_callback
 			(tcpip_mhd_connection_info*)*con_cls;
 		if (*upload_data_size > 0)
 		{
-			if (con_info->len < 4096)
+			if (con_info->len < DOTS_MAX_SIG_LENGTH)
 				con_info->len += *upload_data_size;
 			else
 			{
-				std::cerr << "WARNING: upload limit" <<
-					" exceeded" << std::endl;
+				std::cerr << "WARNING: upload limit exceeded" << std::endl;
 				return MHD_NO; // upload limit exceeded
 			}
 			MHD_post_process(con_info->pp,
