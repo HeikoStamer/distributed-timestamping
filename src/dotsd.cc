@@ -149,9 +149,9 @@ void run_instance
 	size_t leader = 0;
 	bool leader_change = false, execute = false;
 	std::string sn = "";
-	std::vector<size_t> leader_decide;
+	std::vector<size_t> leader_propose;
 	for (size_t i = 0; i < peers.size(); i++)
-		leader_decide.push_back(0);
+		leader_propose.push_back(0);
 	do
 	{
 		mpz_t msg;
@@ -172,7 +172,7 @@ void run_instance
 			if (new_leader == peers.size())
 				new_leader = 0UL;
 			mpz_set_ui(msg, new_leader);
-			rbc->Broadcast(msg); // send LEADER_CHANGE message
+			rbc->Broadcast(msg); // send LEADER_PROPOSE message
 			leader_change = false;
 		}
 		time_t entry = time(NULL);
@@ -223,10 +223,10 @@ void run_instance
 					if (opt_verbose > 1)
 					{
 						std::cerr << "INFO: P_" << whoami <<
-							" received LEADER_CHANGE to " << mpz_get_ui(msg) <<
-							" from P_" << p << std::endl;
+							" received LEADER_PROPOSE with value " <<
+							mpz_get_ui(msg) << " from P_" << p << std::endl;
 					}
-					leader_decide[p] = mpz_get_ui(msg);
+					leader_propose[p] = mpz_get_ui(msg);
 				}
 				else
 				{
@@ -348,8 +348,8 @@ void run_instance
 			{
 				if (opt_verbose > 1)
 				{
-					std::cerr << "INFO: leader_decide[" << i << "] = " <<
-						leader_decide[i] << std::endl;
+					std::cerr << "INFO: leader_propose[" << i << "] = " <<
+						leader_propose[i] << std::endl;
 				}
 				std::vector<std::string>::iterator it;
 				it = std::find(active_peers.begin(), active_peers.end(),
@@ -362,15 +362,15 @@ void run_instance
 						peers[j]);
 					if (it == active_peers.end())
 						continue;
-					if (leader_decide[i] != leader_decide[j])
+					if (leader_propose[i] != leader_propose[j])
 						unique = false;
 				}
 			}
 			if (unique)
 			{
-/* FIXME: implement BFT algorithm to decide based on leader_decide array */
+				// TODO: use BFT consensus algorithm on leader_propose array
 				sn = ""; // start new round with empty S/N and a new leader
-				leader = leader_decide[leader];
+				leader = leader_propose[leader];
 			}
 			std::string type;
 			if (dots_http_request(peers[leader], DOTS_MHD_PORT + leader,

@@ -69,7 +69,7 @@ static const char *tcpip_mhd_defaultpage = "<html><body>"
 "</body></html>";
 static const char *tcpip_mhd_submitpage = "<html><body>"
 "<h2>Distributed OpenPGP Timestamping Service (DOTS)</h2>"
-"<form action=\"/submit\" method=\"post\"><div>"
+"<form action=\"/input\" method=\"post\"><div>"
 "<label for=\"signature\">Please submit a detached ASCII-armored OpenPGP"
 " signature:</label><br>"
 "<textarea name=\"signature\" minlength=\"100\" maxlength=\"4096\" cols=\"80\""
@@ -78,9 +78,10 @@ static const char *tcpip_mhd_submitpage = "<html><body>"
 "</div></form></body></html>";
 static const char *tcpip_mhd_duppage = "<html><body>"
 "<h2>Distributed OpenPGP Timestamping Service (DOTS)</h2>"
-"Signature with this S/N was already submitted!"
+"ERROR: signature with this S/N already submitted"
 "</body></html>";
-static const char *tcpip_mhd_notpage = "Signature/Timestamp/Errorlog not found";
+static const char *tcpip_mhd_notpage = "ERROR: signature/timestamp/errorlog"
+" not found";
 struct MHD_Daemon *tcpip_mhd;
 
 // This is the signal handler called when receiving SIGINT, SIGQUIT,
@@ -207,8 +208,26 @@ static int tcpip_mhd_callback
 	int ret;
 	if (*con_cls == NULL)
 	{
+		if (opt_verbose > 1)
+		{
+			std::cerr << "INFO: " << version << "-" << method << " request" <<
+				" for URL \"" << url << "\" (initial call)" << std::endl;
+		}
+		if ((strcmp(url, "/status") != 0) && 
+			(strcmp(url, "/queue") != 0) &&
+			(strcmp(url, "/start") != 0) &&
+			(strncmp(url, "/signature", 10) != 0) &&
+			(strncmp(url, "/timestamp", 10) != 0) &&
+			(strncmp(url, "/errorlog", 9) != 0) &&
+			(strncmp(url, "/submit", 7) != 0) &&
+			(strncmp(url, "/input", 6) != 0))
+		{
+			std::cerr << "WARNING: bad URL requested" << std::endl;
+			return MHD_NO;
+		}
+		size_t con_size = sizeof(tcpip_mhd_connection_info);
 		tcpip_mhd_connection_info *con_info;
-		con_info = (tcpip_mhd_connection_info*)malloc(sizeof(tcpip_mhd_connection_info));
+		con_info = (tcpip_mhd_connection_info*)malloc(con_size);
 		if (con_info == NULL)
 			return MHD_NO;
 		con_info->sig = NULL;
@@ -263,7 +282,7 @@ static int tcpip_mhd_callback
 	{
 		const char *tsn = MHD_lookup_connection_value(con,
 			MHD_GET_ARGUMENT_KIND, "sn");
-		if (strcmp(url, "/") == 0)
+		if (strcmp(url, "/submit") == 0)
 		{
 			res = MHD_create_response_from_buffer(
 				strlen(tcpip_mhd_submitpage),
@@ -386,7 +405,7 @@ static int tcpip_mhd_callback
 			*upload_data_size = 0;
 			return MHD_YES;
 		}
-		else if ((con_info->sig != NULL) && (strcmp(url, "/submit") == 0))
+		else if ((con_info->sig != NULL) && (strcmp(url, "/input") == 0))
 		{
 			std::string sig(con_info->sig);
 			tmcg_openpgp_octets_t sig_octets, hash;
