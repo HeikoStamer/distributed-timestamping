@@ -407,11 +407,11 @@ static int tcpip_mhd_callback
 		else if ((con_info->sig != NULL) && (strcmp(url, "/input") == 0))
 		{
 			std::string sig(con_info->sig);
-			tmcg_openpgp_octets_t sig_octets, hash;
+			tmcg_openpgp_octets_t hash_input, hash;
 			for (size_t i = 0; i < sig.length(); i++)
-				sig_octets.push_back(sig[i]);
+				hash_input.push_back(sig[i]);
 			CallasDonnerhackeFinneyShawThayerRFC4880::
-				HashCompute(TMCG_OPENPGP_HASHALGO_RMD160, sig_octets, hash);
+				HashCompute(TMCG_OPENPGP_HASHALGO_RMD160, hash_input, hash);
 			std::string sn;
 			CallasDonnerhackeFinneyShawThayerRFC4880::
 				FingerprintConvertPlain(hash, sn);

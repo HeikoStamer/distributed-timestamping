@@ -295,7 +295,7 @@ bool dots_start_process
 //			dkgpg_args.push_back("-V"); // -V FIXME: errorlog may contain secrets
 			dkgpg_args.push_back("-a"); // -a
 			std::stringstream serial;
-			serial << "serialnumber@" << hostname << ":" << sn;
+			serial << "serialnumber@" << lh << ":" << sn;
 			dkgpg_args.push_back("-s"); // -s
 			dkgpg_args.push_back(serial.str());
 			if (opt_W != 5)
