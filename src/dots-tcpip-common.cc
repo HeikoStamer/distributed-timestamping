@@ -407,11 +407,28 @@ static int tcpip_mhd_callback
 		else if ((con_info->sig != NULL) && (strcmp(url, "/input") == 0))
 		{
 			std::string sig(con_info->sig);
-			tmcg_openpgp_octets_t hash_input, hash;
+			tmcg_openpgp_secure_string_t pw;
+			tmcg_openpgp_secure_octets_t key;
+			tmcg_openpgp_octets_t salt, hash;
 			for (size_t i = 0; i < sig.length(); i++)
-				hash_input.push_back(sig[i]);
+				pw += sig[i];
 			CallasDonnerhackeFinneyShawThayerRFC4880::
-				HashCompute(TMCG_OPENPGP_HASHALGO_RMD160, hash_input, hash);
+				PacketTimeEncode(time(NULL), salt);
+			salt.pop_back(); // remove two most significant octets of time, 
+			salt.pop_back(); // thus salt will change at least after 18.5 days
+			size_t sasi = salt.size();
+			for (size_t i = 0; i < (8 - sasi); i++)
+			{
+				if (i < tcpip_thispeer.length())
+					salt.push_back(tcpip_thispeer[i]);
+				else
+					salt.push_back(i);
+			}
+			CallasDonnerhackeFinneyShawThayerRFC4880::
+				S2KCompute(TMCG_OPENPGP_HASHALGO_RMD160, 22, pw, salt, true,
+				0xFF, key);
+			for (size_t i = 0; i < key.size(); i++)
+				hash.push_back(key[i]);
 			std::string sn;
 			CallasDonnerhackeFinneyShawThayerRFC4880::
 				FingerprintConvertPlain(hash, sn);
@@ -423,7 +440,7 @@ static int tcpip_mhd_callback
 				std::stringstream tmp;
 				tmp << "<html><body>";
 				tmp << "<h2>Distributed OpenPGP Timestamping Service (DOTS)</h2>";
-				tmp << "Successfully submitted a signature with S/N = ";
+				tmp << "Successfully submitted signature with S/N = ";
 				tmp << sn;
 				tmp << " for stamping.";
 				tmp << "</body></html>";
