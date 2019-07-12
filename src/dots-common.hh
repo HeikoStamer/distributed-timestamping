@@ -35,11 +35,13 @@
 	#include <netinet/in.h>
 	#include <sys/socket.h>
 
+	#include <libTMCG.hh>
+
 	enum dots_status_t
 	{
 		DOTS_STATUS_UNKNOWN		= 0,
-		DOTS_STATUS_SUBMITTED		= 1,
-		DOTS_STATUS_CONFIRMED		= 2,
+		DOTS_STATUS_SUBMITTED	= 1,
+		DOTS_STATUS_CONFIRMED	= 2,
 		DOTS_STATUS_STARTED		= 3,
 		DOTS_STATUS_STAMPED		= 4,
 		DOTS_STATUS_FAILED		= 50,
@@ -73,6 +75,10 @@
 	void dots_kill_process
 		(const pid_t pid,
 		 const int opt_verbose);
+	bool dots_encrypt_fuzzy
+		(const std::string &in,
+		 const tmcg_openpgp_secure_string_t &passphrase,
+		 std::string &out);
 
 #endif
 

@@ -457,18 +457,40 @@ static int tcpip_mhd_callback
 				FingerprintConvertPlain(hash, sn);
 			if (tcpip_sn2signature.count(sn) == 0)
 			{
-				// deliver success page
+				// store submitted data
 				tcpip_sn2signature[sn] = sig;
 				tcpip_sn2status[sn] = DOTS_STATUS_SUBMITTED;
 				tcpip_sn2time_submitted[sn] = time(NULL);
+				// encrypt S/N with a random password
+				tmcg_openpgp_byte_t rand[9];
+				gcry_randomize(rand, sizeof(rand), GCRY_STRONG_RANDOM);
+				tmcg_openpgp_octets_t r;
+				for (size_t i = 0; i < sizeof(rand); i++)
+					r.push_back(rand[i]);
+				std::string pwd1;
+				CallasDonnerhackeFinneyShawThayerRFC4880::
+					Radix64Encode(r, pwd1, false);
+				tmcg_openpgp_secure_string_t pwd2;
+				for (size_t i = 0; i < pwd1.length(); i++)
+					pwd2 += pwd1[i];
+				std::string encrypted_sn;
+				if (!dots_encrypt_fuzzy(sn, pwd2, encrypted_sn))
+					encrypted_sn = "FAILED";
+				// deliver success page
 				std::stringstream tmp;
 				tmp << "<html><body>";
 				tmp << "<h2>Distributed OpenPGP Timestamping Service (DOTS)</h2>";
 				tmp << "Successfully submitted a signature for stamping.<br><br>";
-				tmp << "Please confirm your request by ...<br>"; // FIXME
-				tmp << "You can obtain the required S/N by decrypting the";
-				tmp << " following message with any OpenPGP-complient application.";
-				tmp << "TODO"; // TODO
+				tmp << "Please confirm your request immediately by <a href=\"";
+				tmp << "/confirm?sn=XYZ\">/confirm?sn=XYZ</a>, where XYZ is ";
+				tmp << "a unique serial number (S/N) for this request.<br><br>";
+				tmp << "You can obtain the required S/N by decrypting the ";
+				tmp << "following message with any OpenPGP-complient ";
+				tmp << "application.";
+				tmp << "The corresponding password is \"" << pwd2 << "\".<br>";
+				tmp << "<pre>";
+				tmp << encrypted_sn << std::endl;
+				tmp << "</pre>";
 				tmp << "</body></html>";
 				std::string page = tmp.str();
 				res = MHD_create_response_from_buffer(page.length(),

@@ -372,3 +372,169 @@ void dots_kill_process
 		perror("WARNING: dots_kill_process (kill)");
 }
 
+gcry_error_t encrypt_kek
+	(const tmcg_openpgp_octets_t &kek, const tmcg_openpgp_skalgo_t algo,
+	 const tmcg_openpgp_secure_octets_t &key, tmcg_openpgp_octets_t &out)
+{
+	gcry_error_t ret = 0;
+	size_t bs = CallasDonnerhackeFinneyShawThayerRFC4880::
+		AlgorithmIVLength(algo); // get block size of algorithm
+	size_t ks = CallasDonnerhackeFinneyShawThayerRFC4880::
+		AlgorithmKeyLength(algo); // get key size of algorithm
+	if ((bs == 0) || (ks == 0))
+		return gcry_error(GPG_ERR_CIPHER_ALGO); // error: bad algorithm
+	size_t buflen = (kek.size() >= key.size()) ? kek.size() : key.size();
+	unsigned char *buf = (unsigned char*)gcry_malloc_secure(buflen);
+	if (buf == NULL)
+		return gcry_error(GPG_ERR_RESOURCE_LIMIT); // cannot alloc secure memory
+	gcry_cipher_hd_t hd;
+	ret = gcry_cipher_open(&hd, CallasDonnerhackeFinneyShawThayerRFC4880::
+		AlgorithmSymGCRY(algo), GCRY_CIPHER_MODE_CFB, GCRY_CIPHER_SECURE);
+	if (ret)
+	{
+		gcry_free(buf);
+		return ret;
+	}
+	for (size_t i = 0; i < key.size(); i++)
+		buf[i] = key[i];
+	ret = gcry_cipher_setkey(hd, buf, key.size());
+	if (ret)
+	{
+		gcry_free(buf);
+		gcry_cipher_close(hd);
+		return ret;
+	}
+	// set "an IV of all zeros" [RFC 4880]
+	ret = gcry_cipher_setiv(hd, NULL, 0);
+	if (ret)
+	{
+		gcry_free(buf);
+		gcry_cipher_close(hd);
+		return ret;
+	}
+	for (size_t i = 0; i < kek.size(); i++)
+		buf[i] = kek[i];
+	ret = gcry_cipher_encrypt(hd, buf, kek.size(), NULL, 0);
+	if (ret)
+	{
+		gcry_free(buf);
+		gcry_cipher_close(hd);
+		return ret;
+	}
+	for (size_t i = 0; i < kek.size(); i++)
+		out.push_back(buf[i]);
+	gcry_free(buf);
+	gcry_cipher_close(hd);
+	return ret;
+}
+
+bool dots_encrypt_fuzzy
+	(const std::string &in, const tmcg_openpgp_secure_string_t &passphrase,
+	 std::string &out)
+{
+	tmcg_openpgp_octets_t msg;
+	for (size_t i = 0; i < in.length(); i++)
+		msg.push_back(in[i]);
+	// encrypt the provided message and create MDC packet
+	gcry_error_t ret;
+	tmcg_openpgp_octets_t lit, prefix, enc;
+	tmcg_openpgp_secure_octets_t seskey;
+	tmcg_openpgp_skalgo_t skalgo = TMCG_OPENPGP_SKALGO_AES256;
+	CallasDonnerhackeFinneyShawThayerRFC4880::PacketLitEncode(msg, lit);
+	ret = CallasDonnerhackeFinneyShawThayerRFC4880::
+		SymmetricEncryptAES256(lit, seskey, prefix, true, enc); // prepare
+	if (ret)
+	{
+		std::cerr << "ERROR: SymmetricEncryptAES256() failed (rc = " <<
+			gcry_err_code(ret) << ")" << std::endl;
+		return false;
+	}
+	tmcg_openpgp_octets_t mdc_hashing, hash, mdc, seipd;
+	enc.clear();
+	mdc_hashing.insert(mdc_hashing.end(), prefix.begin(), prefix.end());
+	mdc_hashing.insert(mdc_hashing.end(), lit.begin(), lit.end());
+	mdc_hashing.push_back(0xD3);
+	mdc_hashing.push_back(0x14);
+	hash.clear();
+	CallasDonnerhackeFinneyShawThayerRFC4880::
+		HashCompute(TMCG_OPENPGP_HASHALGO_SHA1, mdc_hashing, hash);
+	CallasDonnerhackeFinneyShawThayerRFC4880::PacketMdcEncode(hash, mdc);
+	lit.insert(lit.end(), mdc.begin(), mdc.end()); // append MDC packet
+	// generate a fresh session key, but keep the previous prefix
+	seskey.clear();
+	ret = CallasDonnerhackeFinneyShawThayerRFC4880::
+		SymmetricEncryptAES256(lit, seskey, prefix, false, enc); // encrypt
+	if (ret)
+	{
+		std::cerr << "ERROR: SymmetricEncryptAES256() failed (rc = " <<
+			gcry_err_code(ret) << ")" << std::endl;
+		return false;
+	}
+	CallasDonnerhackeFinneyShawThayerRFC4880::PacketSeipdEncode(enc, seipd);
+	// encrypt session key with passphrase according to S2K
+	tmcg_openpgp_octets_t plain, salt, iv, es;
+	tmcg_openpgp_hashalgo_t s2k_hashalgo = TMCG_OPENPGP_HASHALGO_SHA512;
+	tmcg_openpgp_byte_t rand[8], count = 0xF0; // set resonable S2K count
+	tmcg_openpgp_secure_octets_t kek;
+	gcry_randomize(rand, sizeof(rand), GCRY_STRONG_RANDOM);
+	for (size_t i = 0; i < sizeof(rand); i++)
+		salt.push_back(rand[i]);
+	CallasDonnerhackeFinneyShawThayerRFC4880::
+		S2KCompute(s2k_hashalgo, 32, passphrase, salt, true, count, kek);
+	if ((seskey.size() == 35) && (kek.size() == 32))
+	{
+		// strip the always appended checksum from session key
+		plain.insert(plain.end(), seskey.begin(), seskey.end()-2);
+	}
+	else
+	{
+		std::cerr << "ERROR: bad session key for SKESK" << std::endl;
+		return false;
+	}
+	ret = encrypt_kek(plain, skalgo, kek, es);
+	if (ret)
+	{
+		std::cerr << "ERROR: encrypt_kek() failed (rc = " <<
+			gcry_err_code(ret) << ")" << std::endl;
+		return false;
+	}
+	// create one valid SKESK packet and a lot of false (dummy) SKESK packets
+	tmcg_openpgp_byte_t salt2[salt.size()], rand2[es.size() + 1];
+	gcry_randomize(salt2, sizeof(salt2), GCRY_STRONG_RANDOM);
+	gcry_randomize(rand2, sizeof(rand2), GCRY_STRONG_RANDOM);
+	tmcg_openpgp_octets_t all;
+	for (size_t i = 0; i < 256; i++)
+	{
+		CallasDonnerhackeFinneyShawThayerRFC4880::PacketTagEncode(3, all);
+		CallasDonnerhackeFinneyShawThayerRFC4880::
+			PacketLengthEncode(5+salt.size()+es.size(), all);
+		all.push_back(4); // V4 format
+		all.push_back(skalgo);
+		all.push_back(TMCG_OPENPGP_STRINGTOKEY_ITERATED); // Iterated+Salted
+		all.push_back(s2k_hashalgo); // S2K hash algo
+		if (i == rand2[es.size()])
+			all.insert(all.end(), salt.begin(), salt.end()); // valid salt
+		else
+		{
+			for (size_t j = 0; j < salt.size(); j++)
+				all.push_back(salt2[j]); // dummy salt
+			gcry_randomize(salt2, sizeof(salt2), GCRY_STRONG_RANDOM);
+		}
+		all.push_back(count); // count, a one-octet, coded value
+		if (i == rand2[es.size()])
+			all.insert(all.end(), es.begin(), es.end()); // valid key
+		else
+		{
+			for (size_t j = 0; j < es.size(); j++)
+				all.push_back(rand2[j]); // dummy key
+			gcry_randomize(rand2, sizeof(rand2) - 1, GCRY_STRONG_RANDOM);
+		}
+	}
+	// append SEIPD packet
+	all.insert(all.end(), seipd.begin(), seipd.end());
+	// encode all packages in ASCII armor
+	CallasDonnerhackeFinneyShawThayerRFC4880::
+		ArmorEncode(TMCG_OPENPGP_ARMOR_MESSAGE, all, out);
+	return true;
+}
+

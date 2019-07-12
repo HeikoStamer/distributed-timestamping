@@ -44,7 +44,6 @@
 	#include <sys/socket.h>
 
 	#include <microhttpd.h>
-	#include <libTMCG.hh>
 
 	void tcpip_init
 		(const std::string &hostname);
