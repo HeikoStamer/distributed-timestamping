@@ -54,6 +54,7 @@ std::map<std::string, dots_status_t> tcpip_sn2status;
 std::map<std::string, std::string> tcpip_sn2signature;
 std::map<std::string, std::string> tcpip_sn2timestamp;
 std::map<std::string, std::string> tcpip_sn2errorlog;
+std::map<std::string, time_t> tcpip_sn2time_submitted;
 
 typedef std::map<std::string, dots_status_t>::const_iterator tcpip_sn_mci_t;
 
@@ -79,6 +80,10 @@ static const char *tcpip_mhd_submitpage = "<html><body>"
 static const char *tcpip_mhd_duppage = "<html><body>"
 "<h2>Distributed OpenPGP Timestamping Service (DOTS)</h2>"
 "ERROR: signature with this S/N already submitted"
+"</body></html>";
+static const char *tcpip_mhd_confirmpage = "<html><body>"
+"<h2>Distributed OpenPGP Timestamping Service (DOTS)</h2>"
+"Your submitted request has been confirmed."
 "</body></html>";
 static const char *tcpip_mhd_notpage = "ERROR: signature/timestamp/errorlog"
 " not found";
@@ -220,9 +225,10 @@ static int tcpip_mhd_callback
 			(strncmp(url, "/timestamp", 10) != 0) &&
 			(strncmp(url, "/errorlog", 9) != 0) &&
 			(strncmp(url, "/submit", 7) != 0) &&
-			(strncmp(url, "/input", 6) != 0))
+			(strncmp(url, "/input", 6) != 0) &&
+			(strncmp(url, "/confirm", 8) != 0))
 		{
-			std::cerr << "WARNING: unknown URL requested" << std::endl;
+			std::cerr << "WARNING: got request for unknown URL" << std::endl;
 		}
 		size_t con_size = sizeof(tcpip_mhd_connection_info);
 		tcpip_mhd_connection_info *con_info;
@@ -288,13 +294,30 @@ static int tcpip_mhd_callback
 				(void*)tcpip_mhd_submitpage,
 				MHD_RESPMEM_PERSISTENT);
 		}
+		else if ((strncmp(url, "/confirm", 9) == 0) && (tsn != NULL))
+		{
+			std::string sn(tsn);
+			if (tcpip_sn2status.count(sn) == 1)
+			{
+				if (tcpip_sn2status[sn] == DOTS_STATUS_SUBMITTED)
+					tcpip_sn2status[sn] = DOTS_STATUS_CONFIRMED;
+				res = MHD_create_response_from_buffer(strlen(tcpip_mhd_confirmpage),
+					(void*)tcpip_mhd_confirmpage, MHD_RESPMEM_PERSISTENT);
+			}
+			else
+			{
+				res = MHD_create_response_from_buffer(strlen(tcpip_mhd_notpage),
+					(void*)tcpip_mhd_notpage, MHD_RESPMEM_PERSISTENT);
+			}
+		}
 		else if (strcmp(url, "/status") == 0)
 		{
 			std::stringstream tmp;
 			for (tcpip_sn_mci_t q = tcpip_sn2status.begin();
 				q != tcpip_sn2status.end(); ++q)
 			{
-				tmp << q->first << ":" << (int)q->second << std::endl;
+				if (q->second != DOTS_STATUS_SUBMITTED)
+					tmp << q->first << ":" << (int)q->second << std::endl;
 			}
 			std::string page = tmp.str();
 			res = MHD_create_response_from_buffer(page.length(),
@@ -306,7 +329,7 @@ static int tcpip_mhd_callback
 			for (tcpip_sn_mci_t q = tcpip_sn2status.begin();
 				q != tcpip_sn2status.end(); ++q)
 			{
-				if (q->second == DOTS_STATUS_SUBMITTED)
+				if (q->second == DOTS_STATUS_CONFIRMED)
 					tmp << q->first << std::endl;
 			}
 			std::string page = tmp.str();
@@ -437,12 +460,15 @@ static int tcpip_mhd_callback
 				// deliver success page
 				tcpip_sn2signature[sn] = sig;
 				tcpip_sn2status[sn] = DOTS_STATUS_SUBMITTED;
+				tcpip_sn2time_submitted[sn] = time(NULL);
 				std::stringstream tmp;
 				tmp << "<html><body>";
 				tmp << "<h2>Distributed OpenPGP Timestamping Service (DOTS)</h2>";
-				tmp << "Successfully submitted signature with S/N = ";
-				tmp << sn;
-				tmp << " for stamping.";
+				tmp << "Successfully submitted a signature for stamping.<br><br>";
+				tmp << "Please confirm your request by ...<br>"; // FIXME
+				tmp << "You can obtain the required S/N by decrypting the";
+				tmp << " following message with any OpenPGP-complient application.";
+				tmp << "TODO"; // TODO
 				tmp << "</body></html>";
 				std::string page = tmp.str();
 				res = MHD_create_response_from_buffer(page.length(),
@@ -464,12 +490,18 @@ static int tcpip_mhd_callback
 		if ((strcmp(url, "/status") == 0) ||
 			(strcmp(url, "/queue") == 0) ||
 			(strcmp(url, "/start") == 0) ||
-			(strncmp(url, "/signature", 10) == 0) ||
-			(strncmp(url, "/timestamp", 10) == 0) ||
 			(strncmp(url, "/errorlog", 9) == 0))
 		{
 			MHD_add_response_header(res, MHD_HTTP_HEADER_CONTENT_TYPE,
 				"text/plain");
+			MHD_add_response_header(res, MHD_HTTP_HEADER_CONNECTION,
+				"close");
+		}
+		else if ((strncmp(url, "/signature", 10) == 0) ||
+			(strncmp(url, "/timestamp", 10) == 0))
+		{
+			MHD_add_response_header(res, MHD_HTTP_HEADER_CONTENT_TYPE,
+				"application/pgp-signature");
 			MHD_add_response_header(res, MHD_HTTP_HEADER_CONNECTION,
 				"close");
 		}
@@ -1032,13 +1064,28 @@ int tcpip_io
 		}
 		std::string next = "";
 		bool started = false;
+		std::vector<std::string> cleanup_submitted;
+		time_t current_time = time(NULL);
 		for (tcpip_sn_mci_t q = tcpip_sn2status.begin();
 			q != tcpip_sn2status.end(); ++q)
 		{
 			if (q->second == DOTS_STATUS_STARTED)
 				started = true;
-			if ((q->second == DOTS_STATUS_SUBMITTED) && (next.length() == 0))
+			if ((q->second == DOTS_STATUS_CONFIRMED) && (next.length() == 0))
 				next = q->first;
+			if (q->second == DOTS_STATUS_SUBMITTED)
+			{
+				time_t st = tcpip_sn2time_submitted[q->first];
+				if (st < (current_time - DOTS_TIME_UNCONFIRMED))
+					cleanup_submitted.push_back(q->first);
+			}
+			// FIXME: cleanup DOTS_STATUS_FAILED and DOTS_STATUS_STAMPED
+		}
+		for (size_t i = 0; i < cleanup_submitted.size(); i++)
+		{
+			tcpip_sn2status.erase(cleanup_submitted[i]);
+			tcpip_sn2signature.erase(cleanup_submitted[i]);
+			tcpip_sn2time_submitted.erase(cleanup_submitted[i]);
 		}
 		if (!started && (next.length() > 0))
 		{

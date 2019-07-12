@@ -18,7 +18,7 @@
 #
 # (Process this file with autoconf to produce a configure script.)
 
-AC_REVISION([20190705])
+AC_REVISION([20190709])
 AC_PREREQ(2.61)
 
 AC_INIT([Distributed OpenPGP Timestamping Service], [0.0.2],
@@ -44,6 +44,8 @@ AC_DEFINE(DOTS_TIME_KILL, 600, [Define number of seconds until a stalled DKGPG\
  process is killed])
 AC_DEFINE(DOTS_TIME_INACTIVE, 150, [Define number of seconds without PING\
  received that makes a peer inactive])
+AC_DEFINE(DOTS_TIME_UNCONFIRMED, 180, [Define number of seconds a request is\
+ hold without confirmation])
 AC_DEFINE(DOTS_MHD_PORT, 57080, [Define listening TCP start port of the HTTP\
  daemon])
 AC_DEFINE(DOTS_MAX_SIG_LENGTH, 4096, [Define the maximum number of characters\

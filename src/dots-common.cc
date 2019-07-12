@@ -261,7 +261,7 @@ bool dots_start_process
 			std::string type, signature;
 			if (dots_http_request(lh, port, url, signature, type, opt_verbose))
 			{
-				if (type != "text/plain")
+				if (type != "application/pgp-signature")
 				{
 					std::cerr << "ERROR: invalid content type" << std::endl;
 					exit(-1);

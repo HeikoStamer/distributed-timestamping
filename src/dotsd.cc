@@ -393,11 +393,12 @@ void run_instance
 				leader_change = true; // HTTP request failed -> change leader
 		}
 		// maintain active_peers
+		time_t current_time = time(NULL);
 		for (size_t i = 0; i < peers.size(); i++)
 		{
 			std::vector<std::string>::iterator it;
 			it = std::find(active_peers.begin(), active_peers.end(), peers[i]);
-			if (ping[i] < (time(NULL) - DOTS_TIME_INACTIVE))
+			if (ping[i] < (current_time - DOTS_TIME_INACTIVE))
 			{
 				if (it == active_peers.end())
 					active_peers.erase(it); // remove inactive peer
