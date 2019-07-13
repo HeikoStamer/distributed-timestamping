@@ -39,11 +39,12 @@ AC_DEFINE_UNQUOTED(VERSION, "$PACKAGE_VERSION", [Version of this package])
 AC_DEFINE(DOTS_MAX_N, 32, [Define the maximum number of parties/peers])
 AC_DEFINE(DOTS_TIME_POLL, 5, [Define the timeout for RBC channel polling in\
  seconds])
-AC_DEFINE(DOTS_TIME_PING, 30, [Define number of seconds between PING messages])
+AC_DEFINE(DOTS_TIME_LOOP, 30, [Define number of seconds to stay inside inner\
+ loop])
 AC_DEFINE(DOTS_TIME_KILL, 600, [Define number of seconds until a stalled DKGPG\
  process is killed])
 AC_DEFINE(DOTS_TIME_INACTIVE, 150, [Define number of seconds without PING\
- received that makes a peer inactive])
+ received that turns a peer inactive])
 AC_DEFINE(DOTS_TIME_UNCONFIRMED, 180, [Define number of seconds that a request\
  is hold without confirmation])
 AC_DEFINE(DOTS_TIME_STAMP, 604800, [Define number of seconds that a timestamp\

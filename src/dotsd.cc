@@ -154,6 +154,7 @@ void run_instance
 		leader_propose.push_back(0);
 	do
 	{
+		// sending messages
 		mpz_t msg;
 		mpz_init_set_ui(msg, 1UL + peers.size());
 		rbc->Broadcast(msg); // send a PING message
@@ -178,6 +179,7 @@ void run_instance
 		time_t entry = time(NULL);
 		do
 		{
+			// inner loop: waiting for messages on RBC channel
 			size_t p = 0, s = aiounicast::aio_scheduler_roundrobin;
 			if (rbc->Deliver(msg, p, s, DOTS_TIME_POLL))
 			{
@@ -235,9 +237,9 @@ void run_instance
 				}
 			}
 		}
-		while ((time(NULL) < (entry + DOTS_TIME_PING)) && !signal_caught);
+		while ((time(NULL) < (entry + DOTS_TIME_LOOP)) && !signal_caught);
 		mpz_clear(msg);
-		// handle executed program
+		// check executed program and do other stuff
 		if (dkgpg_forked)
 		{
 			int wstatus = 0;
@@ -356,6 +358,8 @@ void run_instance
 					peers[i]);
 				if (it == active_peers.end())
 					continue;
+				if (opt_verbose > 1)
+					std::cerr << "INFO: P_" << i << " is active " << std::endl;
 				for (size_t j = 0; j < peers.size(); j++)
 				{
 					it = std::find(active_peers.begin(), active_peers.end(),
@@ -431,7 +435,7 @@ void run_instance
 		if (waitpid(dkgpg_pid, NULL, WNOHANG) != dkgpg_pid)
 			perror("WARNING: run_instance (waitpid)");
 	}
-	// release RBC
+	// release RBC channel
 	delete rbc;
 	// release handles (unicast channel)
 	if (opt_verbose)
