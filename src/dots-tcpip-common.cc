@@ -50,13 +50,14 @@ std::map<size_t, int>			tcpip_broadcast_pipe2socket_in;
 
 typedef std::map<size_t, int>::const_iterator tcpip_mci_t;
 
-std::map<std::string, dots_status_t> tcpip_sn2status;
-std::map<std::string, std::string> tcpip_sn2signature;
-std::map<std::string, std::string> tcpip_sn2timestamp;
-std::map<std::string, std::string> tcpip_sn2log;
-std::map<std::string, time_t> tcpip_sn2time_submitted;
-std::map<std::string, time_t> tcpip_sn2time_stamped;
-std::map<std::string, time_t> tcpip_sn2time_failed;
+std::string								tcpip_sn_seed;
+std::map<std::string, dots_status_t>	tcpip_sn2status;
+std::map<std::string, std::string>		tcpip_sn2signature;
+std::map<std::string, std::string>		tcpip_sn2timestamp;
+std::map<std::string, std::string>		tcpip_sn2log;
+std::map<std::string, time_t>			tcpip_sn2time_submitted;
+std::map<std::string, time_t>			tcpip_sn2time_stamped;
+std::map<std::string, time_t>			tcpip_sn2time_failed;
 
 typedef std::map<std::string, dots_status_t>::const_iterator tcpip_sn_mci_t;
 
@@ -69,7 +70,7 @@ typedef struct
 } tcpip_mhd_connection_info;
 #define TCPIP_MHD_H2 "<header><h2>Distributed OpenPGP Timestamping Service (DOTS)</h2></header>"
 #define TCPIP_MHD_HEADER "<!DOCTYPE html><html lang=\"en\"><head><title>" PACKAGE_STRING "</title></head><body>"
-#define TCPIP_MHD_FOOTER "<footer>Powered by <a href=\"https://www.gnu.org/philosophy/free-sw.html\">free software</a>: <a href=\"https://savannah.nongnu.org/projects/distributed-timestamping/\">Distributed OpenPGP Timestamping</a></footer></body></html>"
+#define TCPIP_MHD_FOOTER "<p><footer>Powered by <a href=\"https://www.gnu.org/philosophy/free-sw.html\">free software</a>: <a href=\"https://savannah.nongnu.org/projects/distributed-timestamping/\">Distributed OpenPGP Timestamping</a></footer></body></html>"
 static const char *tcpip_mhd_defaultpage = TCPIP_MHD_HEADER TCPIP_MHD_H2
 	"This is an EXPERIMENTAL service provided free of charge in the hope that "
 	"it will be useful, but WITHOUT ANY WARRANTY; without even the implied "
@@ -463,10 +464,11 @@ static int tcpip_mhd_callback
 		{
 			std::string sig(con_info->sig);
 			tmcg_openpgp_secure_string_t pw;
-			tmcg_openpgp_secure_octets_t key;
 			tmcg_openpgp_octets_t salt, hash;
 			for (size_t i = 0; i < sig.length(); i++)
 				pw += sig[i];
+			for (size_t i = 0; i < tcpip_sn_seed.length(); i++)
+				pw += tcpip_sn_seed[i]; // adding a fixed random seed
 			CallasDonnerhackeFinneyShawThayerRFC4880::
 				PacketTimeEncode(time(NULL), salt);
 			salt.pop_back(); // remove two most significant octets of time, 
@@ -479,9 +481,10 @@ static int tcpip_mhd_callback
 				else
 					salt.push_back(i);
 			}
+			tmcg_openpgp_secure_octets_t key;
 			CallasDonnerhackeFinneyShawThayerRFC4880::
 				S2KCompute(TMCG_OPENPGP_HASHALGO_RMD160, 22, pw, salt, true,
-				0xFF, key);
+				0x42, key);
 			for (size_t i = 0; i < key.size(); i++)
 				hash.push_back(key[i]);
 			std::string sn;
@@ -508,7 +511,7 @@ static int tcpip_mhd_callback
 				std::string encrypted_sn;
 				if (!dots_encrypt_fuzzy(sn, pwd2, encrypted_sn))
 					encrypted_sn = "FAILED";
-				// deliver success page
+				// deliver dynamic page with instructions
 				std::stringstream tmp;
 				tmp << TCPIP_MHD_HEADER << TCPIP_MHD_H2 << "Successfully " <<
 					"submitted a signature for stamping.<br><br>" <<
@@ -588,6 +591,13 @@ void tcpip_init
 		tcpip_peer2pipe[peers[i]] = i;
 		tcpip_pipe2peer[i] = peers[i];
 	}
+	// initialize random S/N seed
+	tmcg_openpgp_byte_t rand[32];
+	gcry_randomize(rand, sizeof(rand), GCRY_STRONG_RANDOM);
+	tmcg_openpgp_octets_t r;
+	for (size_t i = 0; i < sizeof(rand); i++)
+		r.push_back(rand[i]);
+	CallasDonnerhackeFinneyShawThayerRFC4880::Radix64Encode(r, tcpip_sn_seed);
 	// initialize HTTP server (MHD)
 	struct sigaction act;
 	memset(&act, 0, sizeof(act));
