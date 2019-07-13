@@ -65,28 +65,25 @@ typedef struct
 	size_t len;
 	struct MHD_PostProcessor *pp;
 } tcpip_mhd_connection_info;
-static const char *tcpip_mhd_defaultpage = "<html><body>"
-"<h2>Distributed OpenPGP Timestamping Service (DOTS)</h2>"
-"</body></html>";
-static const char *tcpip_mhd_submitpage = "<html><body>"
-"<h2>Distributed OpenPGP Timestamping Service (DOTS)</h2>"
-"<form action=\"/input\" method=\"post\"><div>"
-"<label for=\"signature\">Please submit a detached ASCII-armored OpenPGP"
-" signature:</label><br>"
-"<textarea name=\"signature\" minlength=\"100\" maxlength=\"4096\" cols=\"80\""
-" rows=\"14\" required></textarea><br>"
-"<input type=\"submit\" value=\" Submit \">"
-"</div></form></body></html>";
-static const char *tcpip_mhd_duppage = "<html><body>"
-"<h2>Distributed OpenPGP Timestamping Service (DOTS)</h2>"
-"ERROR: signature with this S/N already submitted"
-"</body></html>";
-static const char *tcpip_mhd_confirmpage = "<html><body>"
-"<h2>Distributed OpenPGP Timestamping Service (DOTS)</h2>"
-"Your submitted request has been confirmed."
-"</body></html>";
+#define TCPIP_MHD_H2 "<h2>Distributed OpenPGP Timestamping Service (DOTS)</h2>"
+#define TCPIP_MHD_HEADER "<!DOCTYPE html><html lang=\"en\"><body>"
+#define TCPIP_MHD_FOOTER "</body></html>"
+static const char *tcpip_mhd_defaultpage = TCPIP_MHD_HEADER TCPIP_MHD_H2
+	TCPIP_MHD_FOOTER;
+static const char *tcpip_mhd_submitpage = TCPIP_MHD_HEADER TCPIP_MHD_H2
+	"<form action=\"/input\" method=\"post\"><div>"
+	"<label for=\"signature\">Please submit a detached ASCII-armored OpenPGP"
+	" signature:</label><br>"
+	"<textarea name=\"signature\" minlength=\"100\" maxlength=\"4096\" cols=\"80\""
+	" rows=\"14\" required></textarea><br>"
+	"<input type=\"submit\" value=\" Submit \">"
+	"</div></form>" TCPIP_MHD_FOOTER;
+static const char *tcpip_mhd_duppage = TCPIP_MHD_HEADER TCPIP_MHD_H2
+	"ERROR: signature with this S/N already submitted" TCPIP_MHD_FOOTER;
+static const char *tcpip_mhd_confirmpage = TCPIP_MHD_HEADER TCPIP_MHD_H2
+	"Your submitted request has been confirmed." TCPIP_MHD_FOOTER;
 static const char *tcpip_mhd_notpage = "ERROR: signature/timestamp/errorlog"
-" not found";
+	" not found";
 struct MHD_Daemon *tcpip_mhd;
 
 // This is the signal handler called when receiving SIGINT, SIGQUIT,
@@ -478,19 +475,21 @@ static int tcpip_mhd_callback
 					encrypted_sn = "FAILED";
 				// deliver success page
 				std::stringstream tmp;
-				tmp << "<html><body>";
-				tmp << "<h2>Distributed OpenPGP Timestamping Service (DOTS)</h2>";
-				tmp << "Successfully submitted a signature for stamping.<br><br>";
-				tmp << "Please confirm your request immediately by <a href=\"";
-				tmp << "/confirm?sn=XYZ\">/confirm?sn=XYZ</a>, where XYZ is ";
-				tmp << "a unique serial number (S/N) for this request.<br><br>";
+				tmp << "<!DOCTYPE html><html lang=\"en\"><body>";
+				tmp << TCPIP_MHD_H2 << "Successfully submitted a signature ";
+				tmp << "for stamping.<br><br>";
+				tmp << "Please confirm your request immediately by visiting ";
+				tmp << "<a href=\"/confirm?sn=XYZ\">/confirm?sn=XYZ</a>, where";
+				tmp << " XYZ is a placeholder for the unique serial number ";
+				tmp << "(S/N) of this request.<br><br>";
 				tmp << "You can obtain the required S/N by decrypting the ";
 				tmp << "following message with any OpenPGP-complient ";
-				tmp << "application.";
-				tmp << "The corresponding password is \"" << pwd2 << "\".<br>";
+				tmp << "application (e.g. gpg -d --pinentry-mode loopback ";
+				tmp << "--batch --passphrase '" << pwd2 << "'):<br>";
 				tmp << "<pre>";
 				tmp << encrypted_sn << std::endl;
-				tmp << "</pre>";
+				tmp << "</pre><br>";
+				tmp << "The corresponding password is \"" << pwd2 << "\".";
 				tmp << "</body></html>";
 				std::string page = tmp.str();
 				res = MHD_create_response_from_buffer(page.length(),
@@ -573,9 +572,9 @@ void tcpip_init
 		DOTS_MHD_PORT + tcpip_peer2pipe[tcpip_thispeer],
 		NULL, NULL, &tcpip_mhd_callback, NULL, 
 		MHD_OPTION_NOTIFY_COMPLETED, tcpip_mhd_request_completed, NULL,
-		MHD_OPTION_CONNECTION_LIMIT, FD_SETSIZE - 4 - (4 * peers.size()),
-		MHD_OPTION_CONNECTION_TIMEOUT, 120, // 120 seconds
-		MHD_OPTION_PER_IP_CONNECTION_LIMIT, 12, // max. 12 concurrent connections
+		MHD_OPTION_CONNECTION_LIMIT, FD_SETSIZE - 5 - (4 * peers.size()),
+		MHD_OPTION_CONNECTION_TIMEOUT, 120, // connection timeout in seconds
+		MHD_OPTION_PER_IP_CONNECTION_LIMIT, 12, // max. concurrent connections
 		MHD_OPTION_END);
 	if (tcpip_mhd == NULL)
 	{
@@ -664,7 +663,7 @@ void tcpip_bindports
 	for (uint16_t port = local_start; port < local_end; port++, i++)
 	{
 		struct addrinfo hints = { 0, 0, 0, 0, 0, 0, 0, 0 }, *res, *rp;
-		hints.ai_family = AF_UNSPEC; // AF_INET; FIXME: resolving IPv4-only does not work
+		hints.ai_family = AF_UNSPEC; // AF_INET; FIXME: resolving IPv4-only
 		hints.ai_socktype = SOCK_STREAM;
 		hints.ai_flags = AI_PASSIVE | AI_NUMERICSERV | AI_ADDRCONFIG;
 		std::stringstream ports;
@@ -780,7 +779,7 @@ size_t tcpip_connect
 			uint16_t port = start + (i * peers_size) + peer_offset;
 			int ret;
 			struct addrinfo hints = { 0, 0, 0, 0, 0, 0, 0, 0 }, *res, *rp;
-			hints.ai_family = AF_UNSPEC; // AF_INET; FIXME: resolving IPv4-only does not work
+			hints.ai_family = AF_UNSPEC; // AF_INET; FIXME: resolving IPv4-only
 			hints.ai_socktype = SOCK_STREAM;
 			hints.ai_flags = AI_NUMERICSERV | AI_ADDRCONFIG;
 			if (broadcast)
