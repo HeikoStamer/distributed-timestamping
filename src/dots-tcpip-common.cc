@@ -53,8 +53,10 @@ typedef std::map<size_t, int>::const_iterator tcpip_mci_t;
 std::map<std::string, dots_status_t> tcpip_sn2status;
 std::map<std::string, std::string> tcpip_sn2signature;
 std::map<std::string, std::string> tcpip_sn2timestamp;
-std::map<std::string, std::string> tcpip_sn2errorlog;
+std::map<std::string, std::string> tcpip_sn2log;
 std::map<std::string, time_t> tcpip_sn2time_submitted;
+std::map<std::string, time_t> tcpip_sn2time_stamped;
+std::map<std::string, time_t> tcpip_sn2time_failed;
 
 typedef std::map<std::string, dots_status_t>::const_iterator tcpip_sn_mci_t;
 
@@ -65,24 +67,39 @@ typedef struct
 	size_t len;
 	struct MHD_PostProcessor *pp;
 } tcpip_mhd_connection_info;
-#define TCPIP_MHD_H2 "<h2>Distributed OpenPGP Timestamping Service (DOTS)</h2>"
-#define TCPIP_MHD_HEADER "<!DOCTYPE html><html lang=\"en\"><body>"
-#define TCPIP_MHD_FOOTER "</body></html>"
+#define TCPIP_MHD_H2 "<header><h2>Distributed OpenPGP Timestamping Service (DOTS)</h2></header>"
+#define TCPIP_MHD_HEADER "<!DOCTYPE html><html lang=\"en\"><head><title>" PACKAGE_STRING "</title></head><body>"
+#define TCPIP_MHD_FOOTER "<footer>Powered by <a href=\"https://www.gnu.org/philosophy/free-sw.html\">free software</a>: <a href=\"https://savannah.nongnu.org/projects/distributed-timestamping/\">Distributed OpenPGP Timestamping</a></footer></body></html>"
 static const char *tcpip_mhd_defaultpage = TCPIP_MHD_HEADER TCPIP_MHD_H2
+	"This is an EXPERIMENTAL service provided free of charge in the hope that "
+	"it will be useful, but WITHOUT ANY WARRANTY; without even the implied "
+	"warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.<p>"
+	"If you agree to our <a href=\"/policy\">service policy</a>, then you are "
+	"allowed to do the following operations: <ul>"
+	"<li><a href=\"/submit\">Submit a detached signature for stamping</a></li>"
+	"<li><a href=\"/confirm?sn=XYZ\">Confirm your submitted request</a></li>"
+	"<li><a href=\"/queue\">Watch the queue of confirmed requests</a></li>"
+	"<li><a href=\"/status\">Watch the status of any request</a></li>"
+	"<li><a href=\"/timestamp?sn=XYZ\">Retrieve the timestamp signature of any "
+		"recent request</a></li>"
+	"<li><a href=\"/log?sn=XYZ\">Read the stamp-log of any recently failed "
+		"request</a></li>"
+	"</ul>" TCPIP_MHD_FOOTER;
+static const char *tcpip_mhd_policypage = TCPIP_MHD_HEADER TCPIP_MHD_H2
 	TCPIP_MHD_FOOTER;
 static const char *tcpip_mhd_submitpage = TCPIP_MHD_HEADER TCPIP_MHD_H2
 	"<form action=\"/input\" method=\"post\"><div>"
 	"<label for=\"signature\">Please submit a detached ASCII-armored OpenPGP"
-	" signature:</label><br>"
-	"<textarea name=\"signature\" minlength=\"100\" maxlength=\"4096\" cols=\"80\""
-	" rows=\"14\" required></textarea><br>"
+	" signature:</label><br>" // FIXME: keep in line with DOTS_MAX_SIG_LENGTH
+	"<textarea name=\"signature\" minlength=\"80\" maxlength=\"4096\""
+	" cols=\"80\" rows=\"14\" required></textarea><br>"
 	"<input type=\"submit\" value=\" Submit \">"
 	"</div></form>" TCPIP_MHD_FOOTER;
 static const char *tcpip_mhd_duppage = TCPIP_MHD_HEADER TCPIP_MHD_H2
 	"ERROR: signature with this S/N already submitted" TCPIP_MHD_FOOTER;
 static const char *tcpip_mhd_confirmpage = TCPIP_MHD_HEADER TCPIP_MHD_H2
 	"Your submitted request has been confirmed." TCPIP_MHD_FOOTER;
-static const char *tcpip_mhd_notpage = "ERROR: signature/timestamp/errorlog"
+static const char *tcpip_mhd_notpage = "ERROR: signature/timestamp/log"
 	" not found";
 struct MHD_Daemon *tcpip_mhd;
 
@@ -215,12 +232,13 @@ static int tcpip_mhd_callback
 			std::cerr << "INFO: " << version << "-" << method << " request" <<
 				" for URL \"" << url << "\" (initial call)" << std::endl;
 		}
-		if ((strcmp(url, "/status") != 0) && 
+		if ((strcmp(url, "/policy") != 0) &&
+			(strcmp(url, "/status") != 0) && 
 			(strcmp(url, "/queue") != 0) &&
 			(strcmp(url, "/start") != 0) &&
 			(strncmp(url, "/signature", 10) != 0) &&
 			(strncmp(url, "/timestamp", 10) != 0) &&
-			(strncmp(url, "/errorlog", 9) != 0) &&
+			(strncmp(url, "/log", 4) != 0) &&
 			(strncmp(url, "/submit", 7) != 0) &&
 			(strncmp(url, "/input", 6) != 0) &&
 			(strncmp(url, "/confirm", 8) != 0))
@@ -284,7 +302,14 @@ static int tcpip_mhd_callback
 	{
 		const char *tsn = MHD_lookup_connection_value(con,
 			MHD_GET_ARGUMENT_KIND, "sn");
-		if (strcmp(url, "/submit") == 0)
+		if (strcmp(url, "/policy") == 0)
+		{
+			res = MHD_create_response_from_buffer(
+				strlen(tcpip_mhd_policypage),
+				(void*)tcpip_mhd_policypage,
+				MHD_RESPMEM_PERSISTENT);
+		}
+		else if (strcmp(url, "/submit") == 0)
 		{
 			res = MHD_create_response_from_buffer(
 				strlen(tcpip_mhd_submitpage),
@@ -298,13 +323,17 @@ static int tcpip_mhd_callback
 			{
 				if (tcpip_sn2status[sn] == DOTS_STATUS_SUBMITTED)
 					tcpip_sn2status[sn] = DOTS_STATUS_CONFIRMED;
-				res = MHD_create_response_from_buffer(strlen(tcpip_mhd_confirmpage),
-					(void*)tcpip_mhd_confirmpage, MHD_RESPMEM_PERSISTENT);
+				res = MHD_create_response_from_buffer(
+					strlen(tcpip_mhd_confirmpage),
+					(void*)tcpip_mhd_confirmpage,
+					MHD_RESPMEM_PERSISTENT);
 			}
 			else
 			{
-				res = MHD_create_response_from_buffer(strlen(tcpip_mhd_notpage),
-					(void*)tcpip_mhd_notpage, MHD_RESPMEM_PERSISTENT);
+				res = MHD_create_response_from_buffer(
+					strlen(tcpip_mhd_notpage),
+					(void*)tcpip_mhd_notpage,
+					MHD_RESPMEM_PERSISTENT);
 			}
 		}
 		else if (strcmp(url, "/status") == 0)
@@ -359,8 +388,10 @@ static int tcpip_mhd_callback
 			}
 			else
 			{
-				res = MHD_create_response_from_buffer(strlen(tcpip_mhd_notpage),
-					(void*)tcpip_mhd_notpage, MHD_RESPMEM_PERSISTENT);
+				res = MHD_create_response_from_buffer(
+					strlen(tcpip_mhd_notpage),
+					(void*)tcpip_mhd_notpage,
+					MHD_RESPMEM_PERSISTENT);
 			}
 		}
 		else if ((strncmp(url, "/timestamp", 10) == 0)  && (tsn != NULL))
@@ -376,25 +407,29 @@ static int tcpip_mhd_callback
 			}
 			else
 			{
-				res = MHD_create_response_from_buffer(strlen(tcpip_mhd_notpage),
-					(void*)tcpip_mhd_notpage, MHD_RESPMEM_PERSISTENT);
+				res = MHD_create_response_from_buffer(
+					strlen(tcpip_mhd_notpage),
+					(void*)tcpip_mhd_notpage,
+					MHD_RESPMEM_PERSISTENT);
 			}
 		}
-		else if ((strncmp(url, "/errorlog", 9) == 0)  && (tsn != NULL))
+		else if ((strncmp(url, "/log", 4) == 0)  && (tsn != NULL))
 		{
 			std::string sn(tsn);
-			if (tcpip_sn2errorlog.count(sn) == 1)
+			if (tcpip_sn2log.count(sn) == 1)
 			{
 				std::stringstream tmp;
-				tmp << tcpip_sn2errorlog[sn];
+				tmp << tcpip_sn2log[sn];
 				std::string page = tmp.str();
 				res = MHD_create_response_from_buffer(page.length(),
 					(void*)page.c_str(), MHD_RESPMEM_MUST_COPY);
 			}
 			else
 			{
-				res = MHD_create_response_from_buffer(strlen(tcpip_mhd_notpage),
-					(void*)tcpip_mhd_notpage, MHD_RESPMEM_PERSISTENT);
+				res = MHD_create_response_from_buffer(
+					strlen(tcpip_mhd_notpage),
+					(void*)tcpip_mhd_notpage,
+					MHD_RESPMEM_PERSISTENT);
 			}
 		}
 		else
@@ -475,30 +510,29 @@ static int tcpip_mhd_callback
 					encrypted_sn = "FAILED";
 				// deliver success page
 				std::stringstream tmp;
-				tmp << "<!DOCTYPE html><html lang=\"en\"><body>";
-				tmp << TCPIP_MHD_H2 << "Successfully submitted a signature ";
-				tmp << "for stamping.<br><br>";
-				tmp << "Please confirm your request immediately by visiting ";
-				tmp << "<a href=\"/confirm?sn=XYZ\">/confirm?sn=XYZ</a>, where";
-				tmp << " XYZ is a placeholder for the unique serial number ";
-				tmp << "(S/N) of this request.<br><br>";
-				tmp << "You can obtain the required S/N by decrypting the ";
-				tmp << "following message with any OpenPGP-complient ";
-				tmp << "application (e.g. gpg -d --pinentry-mode loopback ";
-				tmp << "--batch --passphrase '" << pwd2 << "'):<br>";
-				tmp << "<pre>";
-				tmp << encrypted_sn << std::endl;
-				tmp << "</pre><br>";
-				tmp << "The corresponding password is \"" << pwd2 << "\".";
-				tmp << "</body></html>";
+				tmp << TCPIP_MHD_HEADER << TCPIP_MHD_H2 << "Successfully " <<
+					"submitted a signature for stamping.<br><br>" <<
+					"Please confirm your request immediately by visiting " <<
+					"<a href=\"/confirm?sn=XYZ\">/confirm?sn=XYZ</a>, where" <<
+					" XYZ is a placeholder for the unique serial number " <<
+					"(S/N) of this request.<br><br>" <<
+					"You can obtain the required S/N by decrypting the " <<
+					"following message with any OpenPGP-complient " <<
+					"application (e.g. by calling gpg -d --pinentry-mode " <<
+					"loopback --batch --passphrase '" << pwd2 << "'):<br>" <<
+					"<pre>" << encrypted_sn << std::endl << "</pre>" <<
+					"The corresponding password is \"" << pwd2 << "\"." <<
+					TCPIP_MHD_FOOTER;
 				std::string page = tmp.str();
 				res = MHD_create_response_from_buffer(page.length(),
 					(void*)page.c_str(), MHD_RESPMEM_MUST_COPY);
 			}
 			else
 			{
-				res = MHD_create_response_from_buffer(strlen(tcpip_mhd_duppage),
-					(void*)tcpip_mhd_duppage, MHD_RESPMEM_PERSISTENT);
+				res = MHD_create_response_from_buffer(
+					strlen(tcpip_mhd_duppage),
+					(void*)tcpip_mhd_duppage,
+					MHD_RESPMEM_PERSISTENT);
 			}
 		}
 	}
@@ -511,7 +545,7 @@ static int tcpip_mhd_callback
 		if ((strcmp(url, "/status") == 0) ||
 			(strcmp(url, "/queue") == 0) ||
 			(strcmp(url, "/start") == 0) ||
-			(strncmp(url, "/errorlog", 9) == 0))
+			(strncmp(url, "/log", 4) == 0))
 		{
 			MHD_add_response_header(res, MHD_HTTP_HEADER_CONTENT_TYPE,
 				"text/plain");
@@ -1085,7 +1119,8 @@ int tcpip_io
 		}
 		std::string next = "";
 		bool started = false;
-		std::vector<std::string> cleanup_submitted;
+		std::vector<std::string> cleanup_submitted, cleanup_failed;
+		std::vector<std::string> cleanup_stamped;
 		time_t current_time = time(NULL);
 		for (tcpip_sn_mci_t q = tcpip_sn2status.begin();
 			q != tcpip_sn2status.end(); ++q)
@@ -1100,13 +1135,38 @@ int tcpip_io
 				if (st < (current_time - DOTS_TIME_UNCONFIRMED))
 					cleanup_submitted.push_back(q->first);
 			}
-			// FIXME: cleanup DOTS_STATUS_FAILED and DOTS_STATUS_STAMPED
+			else if (q->second == DOTS_STATUS_FAILED)
+			{
+				time_t st = tcpip_sn2time_failed[q->first];
+				if (st < (current_time - DOTS_TIME_LOG))
+					cleanup_failed.push_back(q->first);
+			}
+			else if (q->second == DOTS_STATUS_STAMPED)
+			{
+				time_t st = tcpip_sn2time_stamped[q->first];
+				if (st < (current_time - DOTS_TIME_STAMP))
+					cleanup_stamped.push_back(q->first);
+			}
 		}
 		for (size_t i = 0; i < cleanup_submitted.size(); i++)
 		{
 			tcpip_sn2status.erase(cleanup_submitted[i]);
 			tcpip_sn2signature.erase(cleanup_submitted[i]);
 			tcpip_sn2time_submitted.erase(cleanup_submitted[i]);
+		}
+		for (size_t i = 0; i < cleanup_failed.size(); i++)
+		{
+			tcpip_sn2status.erase(cleanup_failed[i]);
+			tcpip_sn2signature.erase(cleanup_failed[i]);
+			tcpip_sn2log.erase(cleanup_failed[i]);
+			tcpip_sn2time_failed.erase(cleanup_failed[i]);
+		}
+		for (size_t i = 0; i < cleanup_stamped.size(); i++)
+		{
+			tcpip_sn2status.erase(cleanup_failed[i]);
+			tcpip_sn2signature.erase(cleanup_failed[i]);
+			tcpip_sn2timestamp.erase(cleanup_failed[i]);
+			tcpip_sn2time_stamped.erase(cleanup_failed[i]);
 		}
 		if (!started && (next.length() > 0))
 		{
@@ -1130,15 +1190,18 @@ int tcpip_io
 					errorlog << line << std::endl;
 				if (efs.eof())
 				{
-					tcpip_sn2errorlog[current] = errorlog.str();
+					tcpip_sn2log[current] = errorlog.str();
 				}
 				else
 				{
-					std::cerr << "WARNING: reading from error file \"" <<
-						efilename.str() << "\" until EOF failed" << std::endl;
+					tcpip_sn2log[current] = "reading from error file \"" +
+						efilename.str() + "\" until EOF failed";
+					std::cerr << "WARNING: " << tcpip_sn2log[current] <<
+						std::endl;
 				}
 				efs.close();
 				tcpip_sn2status[current] = DOTS_STATUS_FAILED;
+				tcpip_sn2time_failed[current] = time(NULL);
 				started = false;
 			}
 			else if (ofs.is_open())
@@ -1149,8 +1212,9 @@ int tcpip_io
 					timestamp << line << std::endl;
 				if (ofs.eof())
 				{
-					tcpip_sn2timestamp[current] = timestamp.str();
 					tcpip_sn2status[current] = DOTS_STATUS_STAMPED;
+					tcpip_sn2time_stamped[current] = time(NULL);
+					tcpip_sn2timestamp[current] = timestamp.str();
 					started = false;
 				}
 				else
