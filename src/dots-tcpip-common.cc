@@ -299,6 +299,7 @@ static int tcpip_mhd_callback
 		}
 	}
 	struct MHD_Response *res = NULL;
+	bool found = false;
 	if (strcmp(method, "GET") == 0)
 	{
 		const char *tsn = MHD_lookup_connection_value(con,
@@ -395,6 +396,7 @@ static int tcpip_mhd_callback
 				std::string page = tmp.str();
 				res = MHD_create_response_from_buffer(page.length(),
 					(void*)page.c_str(), MHD_RESPMEM_MUST_COPY);
+				found = true;
 			}
 			else
 			{
@@ -414,6 +416,7 @@ static int tcpip_mhd_callback
 				std::string page = tmp.str();
 				res = MHD_create_response_from_buffer(page.length(),
 					(void*)page.c_str(), MHD_RESPMEM_MUST_COPY);
+				found = true;
 			}
 			else
 			{
@@ -564,8 +567,8 @@ static int tcpip_mhd_callback
 			MHD_add_response_header(res, MHD_HTTP_HEADER_CONNECTION,
 				"close");
 		}
-		else if ((strncmp(url, "/signature", 10) == 0) ||
-			(strncmp(url, "/timestamp", 10) == 0))
+		else if (found && ((strncmp(url, "/signature", 10) == 0) ||
+			(strncmp(url, "/timestamp", 10) == 0)))
 		{
 			MHD_add_response_header(res, MHD_HTTP_HEADER_CONTENT_TYPE,
 				"application/pgp-signature");
