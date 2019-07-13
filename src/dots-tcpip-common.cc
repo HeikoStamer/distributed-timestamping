@@ -356,6 +356,15 @@ static int tcpip_mhd_callback
 			for (tcpip_sn_mci_t q = tcpip_sn2status.begin();
 				q != tcpip_sn2status.end(); ++q)
 			{
+				if (q->second == DOTS_STATUS_STARTED)
+				{
+					tmp << q->first << std::endl;
+					break;
+				}
+			}
+			for (tcpip_sn_mci_t q = tcpip_sn2status.begin();
+				q != tcpip_sn2status.end(); ++q)
+			{
 				if (q->second == DOTS_STATUS_CONFIRMED)
 					tmp << q->first << std::endl;
 			}
