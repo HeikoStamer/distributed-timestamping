@@ -151,10 +151,13 @@ void run_instance
 	std::string sn = "";
 	std::vector<size_t> leader_propose;
 	for (size_t i = 0; i < peers.size(); i++)
-		leader_propose.push_back(0);
+		leader_propose.push_back(peers.size());
 	do
 	{
+		// initialize this round
 		round++;
+		for (size_t i = 0; i < leader_propose.size(); i++)
+			leader_propose[i] == peers.size(); // set to undefined
 		// synchronize this round
 		if (opt_verbose > 1)
 		{
@@ -380,7 +383,7 @@ void run_instance
 						unique = false;
 				}
 			}
-			if (unique)
+			if (unique && (leader_propose[leader] < peers.size()))
 			{
 				// TODO: use BFT consensus algorithm on leader_propose array
 				sn = ""; // start new round with empty S/N and a new leader
