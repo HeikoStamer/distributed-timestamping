@@ -157,7 +157,7 @@ void run_instance
 		// initialize this round
 		round++;
 		for (size_t i = 0; i < leader_propose.size(); i++)
-			leader_propose[i] == peers.size(); // set to undefined
+			leader_propose[i] = peers.size(); // set to undefined
 		// synchronize this round
 		if (opt_verbose > 1)
 		{
