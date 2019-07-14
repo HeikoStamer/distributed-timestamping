@@ -184,7 +184,7 @@ void run_instance
 			}
 			execute = false;
 		}
-		if (leader_change)
+		if ((leader_change) && (consensus_phase == 0))
 		{
 			if (opt_verbose > 1)
 				std::cerr << "INFO: Randomized Consensus: Init" << std::endl;
@@ -538,7 +538,7 @@ void run_instance
 					std::cerr << "INFO: P_" << i << " is active " << std::endl;
 			}
 			// choose a (new) leader
-			if (consensus_decision < peers.size())
+			if ((consensus_phase == 0) && (consensus_decision < peers.size()))
 			{
 				sn = ""; // start new round with empty S/N and a new leader
 				leader = consensus_decision;
