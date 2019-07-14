@@ -145,19 +145,21 @@ void run_instance
 			aiou2, aiounicast::aio_scheduler_roundrobin, (opt_W * 60));
 	rbc->setID(myID);
 
-	// main loop
-	size_t leader = 0, round = 0;
+	// main loop: consensus algorithm "Randomized Consensus" (5.12--5.14) [CGR]
+	size_t leader = 0, round = 0, decisions = 0;
 	bool leader_change = false, execute = false;
 	std::string sn = "";
-	std::vector<size_t> leader_propose;
+	size_t consensus_round = 0, consensus_phase = 0;
+	size_t consensus_proposal = peers.size();
+	size_t consensus_decision = peers.size();
+	std::vector<size_t> consensus_val;
 	for (size_t i = 0; i < peers.size(); i++)
-		leader_propose.push_back(peers.size());
+		consensus_val.push_back(peers.size());
 	do
 	{
 		// initialize this round
 		round++;
-		for (size_t i = 0; i < leader_propose.size(); i++)
-			leader_propose[i] = peers.size(); // set to undefined
+/*
 		// try to synchronize this round
 		if (opt_verbose > 1)
 		{
@@ -168,26 +170,44 @@ void run_instance
 		rstr << myID << " sync round = " << round;
 		if (!rbc->Sync(DOTS_TIME_SYNC, rstr.str()))
 			continue; // start next round, if synchronization is failed
+*/
 		// sending messages
 		mpz_t msg;
-		mpz_init_set_ui(msg, 1UL + peers.size());
+		mpz_init_set_ui(msg, 10001UL);
 		rbc->Broadcast(msg); // send a PING message
 		if (execute)
 		{
 			if (whoami == leader)
 			{
-				mpz_set_ui(msg, 2UL + peers.size());
+				mpz_set_ui(msg, 10002UL);
 				rbc->Broadcast(msg); // send a EXEC message
 			}
 			execute = false;
 		}
 		if (leader_change)
 		{
+			if (opt_verbose > 1)
+				std::cerr << "INFO: Randomized Consensus: Init" << std::endl;
+			consensus_round = 0, consensus_phase = 0;
+			consensus_proposal = peers.size(); // undefined
+			consensus_decision = peers.size(); // undefined
+			for (size_t i = 0; i < consensus_val.size(); i++)
+				consensus_val[i] = peers.size(); // set all to undefined
+			if (opt_verbose > 1)
+				std::cerr << "INFO: Randomized Consensus: Propose" << std::endl;
 			unsigned long int new_leader = leader + 1;
 			if (new_leader == peers.size())
 				new_leader = 0UL;
+			consensus_round = 1, consensus_phase = 1;
+			consensus_proposal = peers.size(); // undefined
+			consensus_decision = peers.size(); // undefined
 			mpz_set_ui(msg, new_leader);
+			std::stringstream rstr; // switch RBC to consensus protocol
+			rstr << myID << " and consensus_round = " << consensus_round <<
+				" and decisions = " << decisions;
+			rbc->recoverID(rstr.str());
 			rbc->Broadcast(msg); // send LEADER_PROPOSE message
+			rbc->unsetID(); // return to main protocol
 			leader_change = false;
 		}
 		time_t entry = time(NULL);
@@ -197,7 +217,7 @@ void run_instance
 			size_t p = 0, s = aiounicast::aio_scheduler_roundrobin;
 			if (rbc->Deliver(msg, p, s, DOTS_TIME_POLL))
 			{
-				if (mpz_cmp_ui(msg, 1UL + peers.size()) == 0)
+				if (mpz_cmp_ui(msg, 10001UL) == 0)
 				{
 					if (opt_verbose > 1)
 					{
@@ -206,14 +226,14 @@ void run_instance
 					}
 					ping[p] = time(NULL);
 				}
-				else if (mpz_cmp_ui(msg, 2UL + peers.size()) == 0)
+				else if (mpz_cmp_ui(msg, 10002UL) == 0)
 				{
 					if (opt_verbose > 1)
 					{
 						std::cerr << "INFO: P_" << whoami << " received EXEC" <<
 							" from P_" << p << std::endl;
 					}
-					if (!dkgpg_forked)
+					if (!dkgpg_forked && (p == leader))
 					{
 						// check that leader is inside active_peers
 						if (std::find(active_peers.begin(), active_peers.end(),
@@ -239,15 +259,139 @@ void run_instance
 					if (opt_verbose > 1)
 					{
 						std::cerr << "INFO: P_" << whoami <<
-							" received LEADER_PROPOSE with value " <<
+							" received DECIDED with value " <<
 							mpz_get_ui(msg) << " from P_" << p << std::endl;
 					}
-					leader_propose[p] = mpz_get_ui(msg);
+					consensus_decision = mpz_get_ui(msg);
 				}
 				else
 				{
-					std::cerr << "WARNING: received unknown message from" <<
-						" P_" << p << std::endl;
+					std::cerr << "WARNING: received unknown message m = " <<
+						mpz_get_ui(msg) << " from P_" << p << std::endl;
+				}
+			}
+			std::stringstream rstr; // switch RBC to consensus protocol
+			rstr << myID << " and consensus_round = " << consensus_round <<
+				" and decisions = " << decisions;
+			rbc->recoverID(rstr.str());
+			if (rbc->Deliver(msg, p, s, DOTS_TIME_POLL))
+			{
+				if (mpz_cmp_ui(msg, peers.size()) < 0)
+				{
+					if (opt_verbose > 2)
+					{
+						std::cerr << "INFO: P_" << whoami <<
+							" received LEADER_PROPOSE with value " <<
+							mpz_get_ui(msg) << " from P_" << p << std::endl;
+					}
+					if (consensus_phase == 1)
+						consensus_val[p] = mpz_get_ui(msg);
+					else
+						rbc->QueueFrom(msg, p);
+				}
+				else if ((mpz_cmp_ui(msg, peers.size()) >= 0) &&
+					(mpz_cmp_ui(msg, 2 * peers.size()) < 0))
+				{
+					if (opt_verbose > 2)
+					{
+						std::cerr << "INFO: P_" << whoami <<
+							" received LEADER_DECIDE with value " <<
+							(mpz_get_ui(msg) - peers.size()) <<
+							" from P_" << p << std::endl;
+					}
+					if (consensus_phase == 2)
+						consensus_val[p] = mpz_get_ui(msg) - peers.size();
+					else
+						rbc->QueueFrom(msg, p);
+				}
+				else
+				{
+					std::cerr << "WARNING: received unknown message m = " <<
+						mpz_get_ui(msg) << " from P_" << p << std::endl;
+				}
+			}
+			// Randomized Consensus: prepare
+			size_t consensus_val_defined = 0;
+			std::map<size_t, size_t> consensus_val_numbers;
+			for (size_t i = 0; i < peers.size(); i++)
+			{
+				if (consensus_val[i] < peers.size())
+				{
+					consensus_val_defined++;
+					if (consensus_val_numbers.count(consensus_val[i]) == 0)
+						consensus_val_numbers[consensus_val[i]] = 1;
+					else
+						consensus_val_numbers[consensus_val[i]]++;
+				}
+			}
+			// Randomized Consensus: phase 1
+			if ((consensus_val_defined > (peers.size() / 2)) &&
+				(consensus_phase == 1) && (consensus_decision == peers.size()))
+			{
+				if (opt_verbose > 1)
+				{
+					std::cerr << "INFO: Randomized Consensus: #(val)" <<
+						" > N/2 && phase == 1" << std::endl;
+				}
+				for (std::map<size_t, size_t>::const_iterator
+					it = consensus_val_numbers.begin();
+					it != consensus_val_numbers.end(); ++it)
+				{
+					if (it->second > (peers.size() / 2))
+						consensus_proposal = it->first;
+					else
+						consensus_proposal = peers.size(); // undefined
+				}
+				for (size_t i = 0; i < consensus_val.size(); i++)
+					consensus_val[i] = peers.size(); // set all to undefined				
+				consensus_phase = 2;
+				mpz_set_ui(msg, consensus_proposal + peers.size());
+				rbc->Broadcast(msg); // send LEADER_DECIDE message
+			}
+			rbc->unsetID(); // return to main protocol
+			// Randomized Consensus: phase 2
+			if ((consensus_val_defined > (peers.size() / 2)) &&
+				(consensus_phase == 2) && (consensus_decision == peers.size()))
+			{
+				if (opt_verbose > 1)
+				{
+					std::cerr << "INFO: Randomized Consensus: #(val)" <<
+						" > N/2 && phase == 2" << std::endl;
+				}
+				consensus_phase = 0;
+				for (std::map<size_t, size_t>::const_iterator
+					it = consensus_val_numbers.begin();
+					it != consensus_val_numbers.end(); ++it)
+				{
+					if (it->second > T_RBC)
+						consensus_decision = it->first;
+				}
+				if (consensus_decision < peers.size())
+				{
+					mpz_set_ui(msg, consensus_decision);
+					rbc->Broadcast(msg); // send DECIDED message
+					decisions++;
+				}
+				else
+				{
+					// TODO: implement common coin part of algorithm 5.13 [CGR]
+					for (std::map<size_t, size_t>::iterator
+						it = consensus_val_numbers.begin();
+						it != consensus_val_numbers.end(); ++it)
+					{
+						consensus_proposal = it->second;
+					}
+					for (size_t i = 0; i < consensus_val.size(); i++)
+						consensus_val[i] = peers.size(); // set all to undefined
+					consensus_round++;
+					consensus_phase = 1;
+					std::stringstream rstr2; // switch RBC to consensus protocol
+					rstr2 << myID << " and consensus_round = " <<
+						consensus_round << " and decisions = " << decisions;
+					rbc->setID(rstr2.str());
+					mpz_set_ui(msg, consensus_proposal);
+					rbc->Broadcast(msg); // send LEADER_PROPOSE message
+					rbc->unsetID();
 				}
 			}
 		}
@@ -359,16 +503,31 @@ void run_instance
 		}
 		else
 		{
-			bool unique = true;
+			if (opt_verbose > 1)
+			{
+				std::cerr << "INFO: decisions = " << decisions << 
+					" consensus_round = " << consensus_round <<
+					" consensus_phase = " << consensus_phase << std::endl;
+				std::cerr << "INFO: consensus_proposal = ";
+				if (consensus_proposal < peers.size())
+					std::cerr << consensus_proposal << std::endl;
+				else
+					std::cerr << "undefined" << std::endl;
+				std::cerr << "INFO: consensus_decision = ";
+				if (consensus_decision < peers.size())
+					std::cerr << consensus_decision << std::endl;
+				else
+					std::cerr << "undefined" << std::endl;
+			}
 			for (size_t i = 0; i < peers.size(); i++)
 			{
 				if (opt_verbose > 1)
 				{
-					std::cerr << "INFO: leader_propose[" << i << "] = ";
-					if (leader_propose[i] < peers.size())
-						std::cerr << leader_propose[i] << std::endl;
+					std::cerr << "INFO: consensus_val[" << i << "] = ";
+					if (consensus_val[i] < peers.size())
+						std::cerr << consensus_val[i] << std::endl;
 					else
-						std::cerr << "undef" << std::endl;
+						std::cerr << "undefined" << std::endl;
 				}
 				std::vector<std::string>::iterator it;
 				it = std::find(active_peers.begin(), active_peers.end(),
@@ -377,22 +536,14 @@ void run_instance
 					continue;
 				if (opt_verbose > 1)
 					std::cerr << "INFO: P_" << i << " is active " << std::endl;
-				for (size_t j = 0; j < peers.size(); j++)
-				{
-					it = std::find(active_peers.begin(), active_peers.end(),
-						peers[j]);
-					if (it == active_peers.end())
-						continue;
-					if (leader_propose[i] != leader_propose[j])
-						unique = false;
-				}
 			}
-			if (unique && (leader_propose[leader] < peers.size()))
+			// choose a (new) leader
+			if (consensus_decision < peers.size())
 			{
-				// TODO: use BFT consensus algorithm on leader_propose array
 				sn = ""; // start new round with empty S/N and a new leader
-				leader = leader_propose[leader];
+				leader = consensus_decision;
 			}
+			// request work load from leader
 			std::string type;
 			if (dots_http_request(peers[leader], DOTS_MHD_PORT + leader,
 				"/start", sn, type, opt_verbose))

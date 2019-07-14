@@ -18,7 +18,7 @@
 #
 # (Process this file with autoconf to produce a configure script.)
 
-AC_REVISION([20190713])
+AC_REVISION([20190714])
 AC_PREREQ(2.61)
 
 AC_INIT([Distributed OpenPGP Timestamping Service], [0.0.2],
@@ -37,7 +37,7 @@ AC_DEFINE_UNQUOTED(VERSION, "$PACKAGE_VERSION", [Version of this package])
 
 # Define some parameters and helping macros
 AC_DEFINE(DOTS_MAX_N, 32, [Define the maximum number of parties/peers])
-AC_DEFINE(DOTS_TIME_POLL, 5, [Define the timeout for RBC channel polling in\
+AC_DEFINE(DOTS_TIME_POLL, 1, [Define the timeout for RBC channel polling in\
  seconds])
 AC_DEFINE(DOTS_TIME_LOOP, 30, [Define number of seconds to stay inside inner\
  loop])
@@ -114,16 +114,16 @@ if test "x$GPG_ERROR_LIBS" = "x"; then
 	AC_MSG_ERROR([libgpg-error >= 1.12 is required])
 fi
 
-AM_PATH_LIBTMCG("1.3.18")
+AM_PATH_LIBTMCG("1.4.0")
 if test "x$LIBTMCG_LIBS" = "x"; then
-	AC_MSG_ERROR([LibTMCG >= 1.3.18 is required])
+	AC_MSG_ERROR([LibTMCG >= 1.4.0 is required])
 fi
 AC_SUBST(LIBTMCG_LIBS)
 AC_SUBST(LIBTMCG_CFLAGS)
 
 AC_PATH_PROG(DKGPG, [dkg-timestamp])
 if test "x$DKGPG" = "x"; then
-	AC_MSG_ERROR([DKGPG >= 1.1.2 is required])
+	AC_MSG_ERROR([DKGPG >= 1.1.3 is required])
 else
 	AC_DEFINE_UNQUOTED(DOTS_PATH_DKGPG, "$DKGPG",
 	 [Define path for program dkg-timestamp])
