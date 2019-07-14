@@ -364,8 +364,11 @@ void run_instance
 			{
 				if (opt_verbose > 1)
 				{
-					std::cerr << "INFO: leader_propose[" << i << "] = " <<
-						leader_propose[i] << std::endl;
+					std::cerr << "INFO: leader_propose[" << i << "] = ";
+					if (leader_propose[i] < peers.size())
+						std::cerr << leader_propose[i] << std::endl;
+					else
+						std::cerr << "undef" << std::endl;
 				}
 				std::vector<std::string>::iterator it;
 				it = std::find(active_peers.begin(), active_peers.end(),
