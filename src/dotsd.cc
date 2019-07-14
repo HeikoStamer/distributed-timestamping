@@ -281,9 +281,10 @@ void run_instance
 					{
 						std::cerr << "INFO: P_" << whoami <<
 							" received DECIDED with value " <<
-							mpz_get_ui(msg) << " from P_" << p << std::endl;
+							(mpz_get_ui(msg) - (2 * peers.size())) <<
+							" from P_" << p << std::endl;
 					}
-					consensus_decision = mpz_get_ui(msg);
+					consensus_decision = (mpz_get_ui(msg) - (2 * peers.size()));
 					consensus_phase = 3; // trigger Decide event
 				}
 				else
