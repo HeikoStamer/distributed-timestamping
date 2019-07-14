@@ -183,7 +183,7 @@ void run_instance
 				mpz_set_ui(msg, 1UL);
 			else
 				mpz_set_ui(msg, 0UL);
-			std::stringstream rstr; // switch RBC to consensus protocol
+			std::stringstream rstr; // switch RBC to consensus subprotocol
 			rstr << myID << " and consensus_round = " << consensus_round <<
 				" and decisions = " << decisions;
 			rbc->recoverID(rstr.str());
@@ -234,24 +234,13 @@ void run_instance
 							DOTS_MHD_PORT + leader, sn, opt_verbose);
 					}
 				}
-				else if (mpz_cmp_ui(msg, peers.size()) < 0)
-				{
-					if (opt_verbose > 1)
-					{
-						std::cerr << "INFO: P_" << whoami <<
-							" received DECIDED with value " <<
-							mpz_get_ui(msg) << " from P_" << p << std::endl;
-					}
-					consensus_decision = mpz_get_ui(msg);
-					consensus_phase = 3; // trigger Decide event
-				}
 				else
 				{
 					std::cerr << "WARNING: received unknown message m = " <<
 						mpz_get_ui(msg) << " from P_" << p << std::endl;
 				}
 			}
-			std::stringstream rstr; // switch RBC to consensus protocol
+			std::stringstream rstr; // switch RBC to consensus subprotocol
 			rstr << myID << " and consensus_round = " << consensus_round <<
 				" and decisions = " << decisions;
 			rbc->recoverID(rstr.str());
@@ -284,6 +273,18 @@ void run_instance
 						consensus_val[p] = mpz_get_ui(msg) - peers.size();
 					else
 						rbc->QueueFrom(msg, p);
+				}
+				else if ((mpz_cmp_ui(msg, 2 * peers.size()) >= 0) &&
+					(mpz_cmp_ui(msg, 3 * peers.size()) < 0))
+				{
+					if (opt_verbose > 1)
+					{
+						std::cerr << "INFO: P_" << whoami <<
+							" received DECIDED with value " <<
+							mpz_get_ui(msg) << " from P_" << p << std::endl;
+					}
+					consensus_decision = mpz_get_ui(msg);
+					consensus_phase = 3; // trigger Decide event
 				}
 				else
 				{
@@ -329,7 +330,6 @@ void run_instance
 				mpz_set_ui(msg, consensus_proposal + peers.size());
 				rbc->Broadcast(msg); // send CONSENSUS_DECIDE message
 			}
-			rbc->unsetID(); // return to main protocol
 			// Randomized Consensus: phase 2
 			if ((consensus_val_defined >= (peers.size() - T_RBC)) &&
 				(consensus_phase == 2) && (consensus_decision == peers.size()))
@@ -350,7 +350,7 @@ void run_instance
 				}
 				if (consensus_decision < peers.size())
 				{
-					mpz_set_ui(msg, consensus_decision);
+					mpz_set_ui(msg, consensus_decision + (2 * peers.size()));
 					rbc->Broadcast(msg); // send DECIDED message
 				}
 				else
@@ -371,15 +371,11 @@ void run_instance
 						consensus_val[i] = peers.size(); // set all to undefined
 					consensus_round++;
 					consensus_phase = 1;
-					std::stringstream rstr2; // switch RBC to consensus protocol
-					rstr2 << myID << " and consensus_round = " <<
-						consensus_round << " and decisions = " << decisions;
-					rbc->setID(rstr2.str());
 					mpz_set_ui(msg, consensus_proposal);
 					rbc->Broadcast(msg); // send CONSENSUS_PROPOSE message
-					rbc->unsetID();
 				}
 			}
+			rbc->unsetID(); // return to main protocol
 		}
 		while ((time(NULL) < (entry + DOTS_TIME_LOOP)) && !signal_caught);
 		mpz_clear(msg);
