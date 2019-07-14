@@ -206,7 +206,7 @@ void run_instance
 			rstr << myID << " and consensus_round = " << consensus_round <<
 				" and decisions = " << decisions;
 			rbc->recoverID(rstr.str());
-			rbc->Broadcast(msg); // send LEADER_PROPOSE message
+			rbc->Broadcast(msg); // send CONSENSUS_PROPOSE message
 			rbc->unsetID(); // return to main protocol
 			leader_change = false;
 		}
@@ -281,7 +281,7 @@ void run_instance
 					if (opt_verbose > 2)
 					{
 						std::cerr << "INFO: P_" << whoami <<
-							" received LEADER_PROPOSE with value " <<
+							" received CONSENSUS_PROPOSE with value " <<
 							mpz_get_ui(msg) << " from P_" << p << std::endl;
 					}
 					if (consensus_phase == 1)
@@ -295,7 +295,7 @@ void run_instance
 					if (opt_verbose > 2)
 					{
 						std::cerr << "INFO: P_" << whoami <<
-							" received LEADER_DECIDE with value " <<
+							" received CONSENSUS_DECIDE with value " <<
 							(mpz_get_ui(msg) - peers.size()) <<
 							" from P_" << p << std::endl;
 					}
@@ -346,7 +346,7 @@ void run_instance
 					consensus_val[i] = peers.size(); // set all to undefined				
 				consensus_phase = 2;
 				mpz_set_ui(msg, consensus_proposal + peers.size());
-				rbc->Broadcast(msg); // send LEADER_DECIDE message
+				rbc->Broadcast(msg); // send CONSENSUS_DECIDE message
 			}
 			rbc->unsetID(); // return to main protocol
 			// Randomized Consensus: phase 2
@@ -381,6 +381,11 @@ void run_instance
 					{
 						consensus_proposal = it->second;
 					}
+					if (consensus_proposal == peers.size())
+					{
+						std::cerr << "WARNING: implementation of common coin" <<
+							" required to proceed in consensus" << std::endl;
+					}
 					for (size_t i = 0; i < consensus_val.size(); i++)
 						consensus_val[i] = peers.size(); // set all to undefined
 					consensus_round++;
@@ -390,7 +395,7 @@ void run_instance
 						consensus_round << " and decisions = " << decisions;
 					rbc->setID(rstr2.str());
 					mpz_set_ui(msg, consensus_proposal);
-					rbc->Broadcast(msg); // send LEADER_PROPOSE message
+					rbc->Broadcast(msg); // send CONSENSUS_PROPOSE message
 					rbc->unsetID();
 				}
 			}
