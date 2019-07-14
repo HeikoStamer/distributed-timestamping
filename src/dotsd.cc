@@ -146,7 +146,7 @@ void run_instance
 	rbc->setID(myID);
 
 	// main loop
-	size_t leader = 0;
+	size_t leader = 0, round = 0;
 	bool leader_change = false, execute = false;
 	std::string sn = "";
 	std::vector<size_t> leader_propose;
@@ -154,6 +154,16 @@ void run_instance
 		leader_propose.push_back(0);
 	do
 	{
+		round++;
+		// synchronize this round
+		if (opt_verbose > 1)
+		{
+			std::cerr << "INFO: P_" << whoami << " synchronize round = " <<
+						round << std::endl;
+		}
+		std::stringstream rstr;
+		rstr << round;
+		while (!rbc->Sync(DOTS_TIME_LOOP, rstr.str()));
 		// sending messages
 		mpz_t msg;
 		mpz_init_set_ui(msg, 1UL + peers.size());
