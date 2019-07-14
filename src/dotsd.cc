@@ -158,15 +158,16 @@ void run_instance
 		round++;
 		for (size_t i = 0; i < leader_propose.size(); i++)
 			leader_propose[i] = peers.size(); // set to undefined
-		// synchronize this round
+		// try to synchronize this round
 		if (opt_verbose > 1)
 		{
 			std::cerr << "INFO: P_" << whoami << " synchronize round = " <<
 						round << std::endl;
 		}
 		std::stringstream rstr;
-		rstr << round;
-		while (!rbc->Sync(DOTS_TIME_LOOP, rstr.str()));
+		rstr << myID << " sync round = " << round;
+		if (!rbc->Sync(DOTS_TIME_SYNC, rstr.str()))
+			continue; // start next round, if synchronization is failed
 		// sending messages
 		mpz_t msg;
 		mpz_init_set_ui(msg, 1UL + peers.size());
