@@ -228,7 +228,7 @@ static int tcpip_mhd_callback
 	int ret;
 	if (*con_cls == NULL)
 	{
-		if (opt_verbose > 1)
+		if (opt_verbose > 2)
 		{
 			std::cerr << "INFO: " << version << "-" << method << " request" <<
 				" for URL \"" << url << "\" (initial call)" << std::endl;
@@ -269,7 +269,7 @@ static int tcpip_mhd_callback
 		*con_cls = (void *)con_info;
 		return MHD_YES;
 	}
-	if (opt_verbose > 0)
+	if (opt_verbose)
 	{
 		char ipaddr[INET6_ADDRSTRLEN];
 		memset(ipaddr, 0, sizeof(ipaddr));
@@ -1385,7 +1385,7 @@ int tcpip_io
 				}
 				else
 				{
-					if (opt_verbose > 1)
+					if (opt_verbose > 2)
 					{
 						std::cerr << "INFO: received " << len << " bytes on " <<
 							"connection for P_" << pi->first << std::endl;
@@ -1478,7 +1478,7 @@ int tcpip_io
 				}
 				else
 				{
-					if (opt_verbose > 1)
+					if (opt_verbose > 2)
 					{
 						std::cerr << "INFO: received " << len << " bytes on" <<
 							" broadcast connection for P_" <<
@@ -1568,7 +1568,7 @@ int tcpip_io
 				}
 				else if (tcpip_pipe2socket_out.count(i))
 				{
-					if (opt_verbose > 1)
+					if (opt_verbose > 2)
 					{
 						std::cerr << "INFO: sending " << len << " bytes on" <<
 							" connection to P_" << i << std::endl;
@@ -1624,7 +1624,7 @@ int tcpip_io
 				}
 				else
 				{
-					if (opt_verbose > 1)
+					if (opt_verbose > 2)
 					{
 						std::cerr << "INFO: discarding " << len << " bytes" <<
 							" for P_" << i << std::endl;
@@ -1661,7 +1661,7 @@ int tcpip_io
 				}
 				else if (tcpip_broadcast_pipe2socket_out.count(i))
 				{
-					if (opt_verbose > 1)
+					if (opt_verbose > 2)
 					{
 						std::cerr << "INFO: sending " << len << " bytes on" <<
 							" broadcast connection to P_" << i <<
@@ -1718,7 +1718,7 @@ int tcpip_io
 				}
 				else
 				{
-					if (opt_verbose > 1)
+					if (opt_verbose > 2)
 					{
 						std::cerr << "INFO: discarding " << len << " bytes" <<
 							" for P_" << i << std::endl;
