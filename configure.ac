@@ -18,7 +18,7 @@
 #
 # (Process this file with autoconf to produce a configure script.)
 
-AC_REVISION([20190714])
+AC_REVISION([20190715])
 AC_PREREQ(2.61)
 
 AC_INIT([Distributed OpenPGP Timestamping Service], [0.0.2],
@@ -44,7 +44,7 @@ AC_DEFINE(DOTS_TIME_LOOP, 30, [Define number of seconds to stay inside inner\
 AC_DEFINE(DOTS_TIME_SYNC, 60, [Define number of seconds for synchronization])
 AC_DEFINE(DOTS_TIME_KILL, 900, [Define number of seconds until a stalled DKGPG\
  process is killed])
-AC_DEFINE(DOTS_TIME_INACTIVE, 300, [Define number of seconds without PING\
+AC_DEFINE(DOTS_TIME_INACTIVE, 150, [Define number of seconds without PING\
  received that turns a peer inactive])
 AC_DEFINE(DOTS_TIME_UNCONFIRMED, 300, [Define number of seconds that a request\
  is hold without confirmation])
