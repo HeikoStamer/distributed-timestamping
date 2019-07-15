@@ -213,13 +213,13 @@ void run_instance
 				}
 				else if (mpz_cmp_ui(msg, 10002UL) == 0)
 				{
-					if (opt_verbose > 1)
-					{
-						std::cerr << "INFO: P_" << whoami << " received EXEC" <<
-							" from P_" << p << std::endl;
-					}
 					if (!dkgpg_forked && (p == leader) && (sn.length() > 0))
 					{
+						if (opt_verbose > 1)
+						{
+							std::cerr << "INFO: P_" << whoami << " process" <<
+								" EXEC from P_" << p << std::endl;
+						}
 						// check that leader is inside active_peers
 						if (std::find(active_peers.begin(), active_peers.end(),
 							peers[leader]) == active_peers.end())
