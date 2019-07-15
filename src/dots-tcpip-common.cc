@@ -35,6 +35,7 @@ extern bool						instance_forked;
 extern bool						signal_caught;
 extern int						opt_verbose;
 extern void						fork_instance(const size_t whoami);
+extern std::stringstream		policyfile;
 
 static const size_t				tcpip_pipe_buffer_size = 4096;
 
@@ -64,6 +65,7 @@ typedef std::map<std::string, dots_status_t>::const_iterator tcpip_sn_mci_t;
 typedef struct
 {
 	int ct;
+	bool policy_accepted;
 	char *sig;
 	size_t len;
 	struct MHD_PostProcessor *pp;
@@ -72,8 +74,8 @@ typedef struct
 #define TCPIP_MHD_HEADER "<!DOCTYPE html><html lang=\"en\"><head><title>" PACKAGE_STRING "</title></head><body>"
 #define TCPIP_MHD_FOOTER "<p><footer>Powered by <a href=\"https://www.gnu.org/philosophy/free-sw.html\">free software</a>: <a href=\"https://savannah.nongnu.org/projects/distributed-timestamping/\">Distributed OpenPGP Timestamping</a></footer></body></html>"
 static const char *tcpip_mhd_defaultpage = TCPIP_MHD_HEADER TCPIP_MHD_H2
-	"This is an EXPERIMENTAL service provided free of charge in the hope that "
-	"it will be useful, but WITHOUT ANY WARRANTY; without even the implied "
+	"This is an EXPERIMENTAL service provided free of charge and in the hope "
+	"that it will be useful, but WITHOUT ANY WARRANTY; without even the implied "
 	"warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.<p>"
 	"If you agree to our <a href=\"/policy\">service policy</a>, then you are "
 	"allowed to do the following operations: <ul>"
@@ -87,6 +89,7 @@ static const char *tcpip_mhd_defaultpage = TCPIP_MHD_HEADER TCPIP_MHD_H2
 		"request</a></li>"
 	"</ul>" TCPIP_MHD_FOOTER;
 static const char *tcpip_mhd_policypage = TCPIP_MHD_HEADER TCPIP_MHD_H2
+	"The policy of this service is not defined yet."
 	TCPIP_MHD_FOOTER;
 static const char *tcpip_mhd_submitpage = TCPIP_MHD_HEADER TCPIP_MHD_H2
 	"<form action=\"/input\" method=\"post\"><div>"
@@ -94,7 +97,10 @@ static const char *tcpip_mhd_submitpage = TCPIP_MHD_HEADER TCPIP_MHD_H2
 	" signature:</label><br>" // FIXME: keep in line with DOTS_MAX_SIG_LENGTH
 	"<textarea name=\"signature\" minlength=\"80\" maxlength=\"4096\""
 	" cols=\"80\" rows=\"14\" required></textarea><br>"
-	"<input type=\"submit\" value=\" Submit \">"
+	"<label for=\"policycheck\"><input type=\"checkbox\" name=\"policycheck\""
+	" value=\"policyaccepted\" required /> I accept the terms and conditions"
+	" of the <a href=\"/policy\">service policy</a>.</label><br>"
+	"<input type=\"submit\" name=\"submitbox\" value=\" Submit \" />"
 	"</div></form>" TCPIP_MHD_FOOTER;
 static const char *tcpip_mhd_duppage = TCPIP_MHD_HEADER TCPIP_MHD_H2
 	"ERROR: signature with this S/N already submitted" TCPIP_MHD_FOOTER;
@@ -176,7 +182,16 @@ static int tcpip_mhd_iterate_post
 		cls = NULL; // dummy to avoid compiler warnings
 	tcpip_mhd_connection_info *con_info =
 		(tcpip_mhd_connection_info*)cls;
-	if (strcmp(key, "signature") == 0)
+	if (strcmp(key, "policycheck") == 0)
+	{
+		if ((size > 0) && (size <= 80))
+		{
+			if (strncmp(data, "policyaccepted", 14) == 0)
+				con_info->policy_accepted = true; 
+		}
+		return MHD_YES;
+	}
+	else if (strcmp(key, "signature") == 0)
 	{
 		if ((size > 0) && (size <= DOTS_MAX_SIG_LENGTH))
 		{
@@ -189,7 +204,7 @@ static int tcpip_mhd_iterate_post
 		}
 		else
 			con_info->sig = NULL;
-		return MHD_NO;
+		return MHD_YES;
 	}
 	return MHD_YES;
 }
@@ -251,6 +266,7 @@ static int tcpip_mhd_callback
 		con_info = (tcpip_mhd_connection_info*)malloc(con_size);
 		if (con_info == NULL)
 			return MHD_NO;
+		con_info->policy_accepted = false;
 		con_info->sig = NULL;
 		con_info->len = 0;
 		if (strcmp(method, "POST") == 0)
@@ -306,10 +322,21 @@ static int tcpip_mhd_callback
 			MHD_GET_ARGUMENT_KIND, "sn");
 		if (strcmp(url, "/policy") == 0)
 		{
-			res = MHD_create_response_from_buffer(
-				strlen(tcpip_mhd_policypage),
-				(void*)tcpip_mhd_policypage,
-				MHD_RESPMEM_PERSISTENT);
+			std::string page = policyfile.str(); 
+			if (page.length() > 0)
+			{
+				res = MHD_create_response_from_buffer(
+					page.length(),
+					(void*)page.c_str(),
+					MHD_RESPMEM_MUST_COPY);
+			}
+			else
+			{
+				res = MHD_create_response_from_buffer(
+					strlen(tcpip_mhd_policypage),
+					(void*)tcpip_mhd_policypage,
+					MHD_RESPMEM_PERSISTENT);
+			}
 		}
 		else if (strcmp(url, "/submit") == 0)
 		{
@@ -474,79 +501,89 @@ static int tcpip_mhd_callback
 		}
 		else if ((con_info->sig != NULL) && (strcmp(url, "/input") == 0))
 		{
-			std::string sig(con_info->sig);
-			tmcg_openpgp_secure_string_t pw;
-			tmcg_openpgp_octets_t salt, hash;
-			for (size_t i = 0; i < sig.length(); i++)
-				pw += sig[i];
-			for (size_t i = 0; i < tcpip_sn_seed.length(); i++)
-				pw += tcpip_sn_seed[i]; // adding a fixed random seed
-			CallasDonnerhackeFinneyShawThayerRFC4880::
-				PacketTimeEncode(time(NULL), salt);
-			salt.pop_back(); // remove two most significant octets of time, 
-			salt.pop_back(); // thus salt will change at least after 18.5 days
-			size_t sasi = salt.size();
-			for (size_t i = 0; i < (8 - sasi); i++)
+			if (con_info->policy_accepted)
 			{
-				if (i < tcpip_thispeer.length())
-					salt.push_back(tcpip_thispeer[i]);
-				else
-					salt.push_back(i);
-			}
-			tmcg_openpgp_secure_octets_t key;
-			CallasDonnerhackeFinneyShawThayerRFC4880::
-				S2KCompute(TMCG_OPENPGP_HASHALGO_RMD160, 22, pw, salt, true,
-				0x42, key);
-			for (size_t i = 0; i < key.size(); i++)
-				hash.push_back(key[i]);
-			std::string sn;
-			CallasDonnerhackeFinneyShawThayerRFC4880::
-				FingerprintConvertPlain(hash, sn);
-			if (tcpip_sn2signature.count(sn) == 0)
-			{
-				// store submitted data
-				tcpip_sn2signature[sn] = sig;
-				tcpip_sn2status[sn] = DOTS_STATUS_SUBMITTED;
-				tcpip_sn2time_submitted[sn] = time(NULL);
-				// encrypt S/N with a random password
-				tmcg_openpgp_byte_t rand[9];
-				gcry_randomize(rand, sizeof(rand), GCRY_STRONG_RANDOM);
-				tmcg_openpgp_octets_t r;
-				for (size_t i = 0; i < sizeof(rand); i++)
-					r.push_back(rand[i]);
-				std::string pwd1;
+				std::string sig(con_info->sig);
+				tmcg_openpgp_secure_string_t pw;
+				tmcg_openpgp_octets_t salt, hash;
+				for (size_t i = 0; i < sig.length(); i++)
+					pw += sig[i];
+				for (size_t i = 0; i < tcpip_sn_seed.length(); i++)
+					pw += tcpip_sn_seed[i]; // adding a fixed random seed
 				CallasDonnerhackeFinneyShawThayerRFC4880::
-					Radix64Encode(r, pwd1, false);
-				tmcg_openpgp_secure_string_t pwd2;
-				for (size_t i = 0; i < pwd1.length(); i++)
-					pwd2 += pwd1[i];
-				std::string encrypted_sn;
-				if (!dots_encrypt_fuzzy(sn, pwd2, encrypted_sn))
-					encrypted_sn = "FAILED";
-				// deliver dynamic page with instructions
-				std::stringstream tmp;
-				tmp << TCPIP_MHD_HEADER << TCPIP_MHD_H2 << "Successfully " <<
-					"submitted a signature for stamping.<br><br>" <<
-					"Please confirm your request immediately by visiting " <<
-					"<a href=\"/confirm?sn=XYZ\">/confirm?sn=XYZ</a>, where" <<
-					" XYZ is a placeholder for the unique serial number " <<
-					"(S/N) of this request.<br><br>" <<
-					"You can obtain the required S/N by decrypting the " <<
-					"following message with any OpenPGP-complient " <<
-					"application (e.g. by calling gpg -d --pinentry-mode " <<
-					"loopback --batch --passphrase '" << pwd2 << "'):<br>" <<
-					"<pre>" << encrypted_sn << std::endl << "</pre>" <<
-					"The corresponding password is \"" << pwd2 << "\"." <<
-					TCPIP_MHD_FOOTER;
-				std::string page = tmp.str();
-				res = MHD_create_response_from_buffer(page.length(),
-					(void*)page.c_str(), MHD_RESPMEM_MUST_COPY);
+					PacketTimeEncode(time(NULL), salt);
+				salt.pop_back(); // remove two most significant octets of time, 
+				salt.pop_back(); // thus salt will change at least after 18.5 days
+				size_t sasi = salt.size();
+				for (size_t i = 0; i < (8 - sasi); i++)
+				{
+					if (i < tcpip_thispeer.length())
+						salt.push_back(tcpip_thispeer[i]);
+					else
+						salt.push_back(i);
+				}
+				tmcg_openpgp_secure_octets_t key;
+				CallasDonnerhackeFinneyShawThayerRFC4880::
+					S2KCompute(TMCG_OPENPGP_HASHALGO_RMD160, 22, pw, salt, true,
+					0x42, key);
+				for (size_t i = 0; i < key.size(); i++)
+					hash.push_back(key[i]);
+				std::string sn;
+				CallasDonnerhackeFinneyShawThayerRFC4880::
+					FingerprintConvertPlain(hash, sn);
+				if (tcpip_sn2signature.count(sn) == 0)
+				{
+					// store submitted data
+					tcpip_sn2signature[sn] = sig;
+					tcpip_sn2status[sn] = DOTS_STATUS_SUBMITTED;
+					tcpip_sn2time_submitted[sn] = time(NULL);
+					// encrypt S/N with a random password
+					tmcg_openpgp_byte_t rand[9];
+					gcry_randomize(rand, sizeof(rand), GCRY_STRONG_RANDOM);
+					tmcg_openpgp_octets_t r;
+					for (size_t i = 0; i < sizeof(rand); i++)
+						r.push_back(rand[i]);
+					std::string pwd1;
+					CallasDonnerhackeFinneyShawThayerRFC4880::
+						Radix64Encode(r, pwd1, false);
+					tmcg_openpgp_secure_string_t pwd2;
+					for (size_t i = 0; i < pwd1.length(); i++)
+						pwd2 += pwd1[i];
+					std::string encrypted_sn;
+					if (!dots_encrypt_fuzzy(sn, pwd2, encrypted_sn))
+						encrypted_sn = "FAILED";
+					// deliver dynamic page with instructions
+					std::stringstream tmp;
+					tmp << TCPIP_MHD_HEADER << TCPIP_MHD_H2 << "Successfully " <<
+						"submitted a signature for stamping.<br><br>" <<
+						"Please confirm your request immediately by visiting " <<
+						"<a href=\"/confirm?sn=XYZ\">/confirm?sn=XYZ</a>, where" <<
+						" XYZ is a placeholder for the unique serial number " <<
+						"(S/N) of this request.<br><br>" <<
+						"You can obtain the required S/N by decrypting the " <<
+						"following message with any OpenPGP-complient " <<
+						"application (e.g. by calling gpg -d --pinentry-mode " <<
+						"loopback --batch --passphrase '" << pwd2 << "'):<br>" <<
+						"<pre>" << encrypted_sn << std::endl << "</pre>" <<
+						"The corresponding password is \"" << pwd2 << "\"." <<
+						TCPIP_MHD_FOOTER;
+					std::string page = tmp.str();
+					res = MHD_create_response_from_buffer(page.length(),
+						(void*)page.c_str(), MHD_RESPMEM_MUST_COPY);
+				}
+				else
+				{
+					res = MHD_create_response_from_buffer(
+						strlen(tcpip_mhd_duppage),
+						(void*)tcpip_mhd_duppage,
+						MHD_RESPMEM_PERSISTENT);
+				}
 			}
 			else
 			{
 				res = MHD_create_response_from_buffer(
-					strlen(tcpip_mhd_duppage),
-					(void*)tcpip_mhd_duppage,
+					strlen(tcpip_mhd_policypage),
+					(void*)tcpip_mhd_policypage,
 					MHD_RESPMEM_PERSISTENT);
 			}
 		}

@@ -78,7 +78,8 @@
 	bool dots_encrypt_fuzzy
 		(const std::string &in,
 		 const tmcg_openpgp_secure_string_t &passphrase,
-		 std::string &out);
+		 std::string &out,
+		 const tmcg_openpgp_byte_t count = 0xF0); // default S2K count
 
 #endif
 

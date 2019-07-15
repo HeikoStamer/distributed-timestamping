@@ -292,7 +292,6 @@ bool dots_start_process
 			std::vector<std::string> dkgpg_args;
 			dkgpg_args.push_back(cmd); //
 			dkgpg_args.push_back("-V"); // -V
-//			dkgpg_args.push_back("-V"); // -V FIXME: errorlog may contain secrets
 			dkgpg_args.push_back("-a"); // -a
 			std::stringstream serial;
 			serial << "serialnumber@" << lh << ":" << sn;
@@ -430,11 +429,12 @@ gcry_error_t encrypt_kek
 
 bool dots_encrypt_fuzzy
 	(const std::string &in, const tmcg_openpgp_secure_string_t &passphrase,
-	 std::string &out)
+	 std::string &out, const tmcg_openpgp_byte_t count)
 {
 	tmcg_openpgp_octets_t msg;
 	for (size_t i = 0; i < in.length(); i++)
 		msg.push_back(in[i]);
+	msg.push_back('\n'); // append a newline character
 	// encrypt the provided message and create MDC packet
 	gcry_error_t ret;
 	tmcg_openpgp_octets_t lit, prefix, enc;
@@ -474,7 +474,7 @@ bool dots_encrypt_fuzzy
 	// encrypt session key with passphrase according to S2K
 	tmcg_openpgp_octets_t plain, salt, iv, es;
 	tmcg_openpgp_hashalgo_t s2k_hashalgo = TMCG_OPENPGP_HASHALGO_SHA512;
-	tmcg_openpgp_byte_t rand[8], count = 0xF0; // set resonable S2K count
+	tmcg_openpgp_byte_t rand[8];
 	tmcg_openpgp_secure_octets_t kek;
 	gcry_randomize(rand, sizeof(rand), GCRY_STRONG_RANDOM);
 	for (size_t i = 0; i < sizeof(rand); i++)

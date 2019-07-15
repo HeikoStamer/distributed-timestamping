@@ -66,7 +66,8 @@ char*						*dkgpg_env = NULL;
 std::string					dkgpg_cmd = DOTS_PATH_DKGPG;
 int							dkgpg_fd_in = -1, dkgpg_fd_out = -1, dkgpg_fd_err = -1;
 
-std::string					passwords, hostname, port, URI;
+std::string					passwords, hostname, port, URI, policyfilename;
+std::stringstream			policyfile;
 
 int 						opt_verbose = 0;
 char						*opt_passwords = NULL;
@@ -560,7 +561,7 @@ void run_instance
 			it = std::find(active_peers.begin(), active_peers.end(), peers[i]);
 			if (ping[i] < (current_time - DOTS_TIME_INACTIVE))
 			{
-				if (it == active_peers.end())
+				if (it != active_peers.end())
 					active_peers.erase(it); // remove inactive peer
 			}
 			else
@@ -652,7 +653,7 @@ int main
 		// ignore options
 		if ((arg.find("-p") == 0) || (arg.find("-W") == 0) || 
 			(arg.find("-P") == 0) || (arg.find("-H") == 0) ||
-		    (arg.find("-U") == 0))
+		    (arg.find("-U") == 0) || (arg.find("-Y") == 0))
 		{
 			size_t idx = ++i;
 			if ((arg.find("-H") == 0) && (idx < (size_t)(argc - 1)) &&
@@ -683,6 +684,11 @@ int main
 			{
 				opt_W = strtoul(argv[i+1], NULL, 10);
 			}
+			if ((arg.find("-Y") == 0) && (idx < (size_t)(argc - 1)) &&
+				(policyfilename.length() == 0))
+			{
+				policyfilename = argv[i+1];
+			}
 			continue;
 		}
 		else if ((arg.find("--") == 0) || (arg.find("-v") == 0) ||
@@ -709,6 +715,8 @@ int main
 					std::endl;
 				std::cout << "  -W TIME        timeout for point-to-point" <<
 					" messages in minutes" << std::endl;
+				std::cout << "  -Y FILENAME    read the service policy from" <<
+					" FILENAME" << std::endl;
 				return 0; // not continue
 			}
 			if ((arg.find("-v") == 0) || (arg.find("--version") == 0))
@@ -757,6 +765,31 @@ int main
 	{
 		std::cerr << "ERROR: no valid TCP start port given" << std::endl;
 		return -1;
+	}
+	if (policyfilename.length())
+	{
+		std::ifstream pfs(policyfilename.c_str(), std::ifstream::in);
+		if (pfs.is_open())
+		{
+			std::string line;
+			while (std::getline(pfs, line))
+				policyfile << line << std::endl;
+			if (!pfs.eof())
+			{
+				std::cerr << "ERROR: cannot read until EOF" <<
+					"of policy file \"" <<
+					policyfilename << "\"" << std::endl;
+				pfs.close();
+				return -1;
+			}
+			pfs.close();
+		}
+		else
+		{
+			std::cerr << "ERROR: cannot open policy file \"" <<
+				policyfilename << "\"" << std::endl;
+			return -1;
+		}
 	}
 
 	// canonicalize peer list and check basic requirements
