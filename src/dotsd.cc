@@ -218,7 +218,7 @@ void run_instance
 						std::cerr << "INFO: P_" << whoami << " received EXEC" <<
 							" from P_" << p << std::endl;
 					}
-					if (!dkgpg_forked && (p == leader))
+					if (!dkgpg_forked && (p == leader) && (sn.length() > 0))
 					{
 						// check that leader is inside active_peers
 						if (std::find(active_peers.begin(), active_peers.end(),
@@ -238,6 +238,8 @@ void run_instance
 							dkgpg_fd_out, dkgpg_fd_err, peers[leader],
 							DOTS_MHD_PORT + leader, sn, opt_verbose);
 					}
+					else
+						rbc->QueueFrom(msg, p);
 				}
 				else
 				{
