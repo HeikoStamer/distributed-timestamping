@@ -346,7 +346,11 @@ void run_instance
 						" >= N - f && phase == 2" << std::endl;
 				}
 				consensus_phase = 0;
-				// TODO: init and release common coin
+				// As "common coin" we use the so-called "Independent Choice",
+				// however, in bad cases this results in an exponential number
+				// of consensus rounds for termination.
+				unsigned char c;
+				gcry_randomize(&c, 1, GCRY_STRONG_RANDOM);
 				for (std::map<size_t, size_t>::const_iterator
 					it = consensus_val_numbers.begin();
 					it != consensus_val_numbers.end(); ++it)
@@ -361,21 +365,16 @@ void run_instance
 				}
 				else
 				{
-					// TODO: implement common coin part of algorithm 5.13 [CGR]
+					consensus_proposal = c % 2; // use "common coin" uniformly
 					for (std::map<size_t, size_t>::iterator
 						it = consensus_val_numbers.begin();
 						it != consensus_val_numbers.end(); ++it)
 					{
-						consensus_proposal = it->second; // FIXME: randomize
-					}
-					if (consensus_proposal == peers.size())
-					{
-						std::cerr << "WARNING: implementation of common coin" <<
-							" required to proceed in consensus" << std::endl;
+						consensus_proposal = it->second;
 					}
 					for (size_t i = 0; i < consensus_val.size(); i++)
 						consensus_val[i] = peers.size(); // set all to undefined
-					consensus_round++;
+					consensus_round = consensus_round + 1;
 					consensus_phase = 1;
 					mpz_set_ui(msg, consensus_proposal);
 					rbc->Broadcast(msg); // send CONSENSUS_PROPOSE message
