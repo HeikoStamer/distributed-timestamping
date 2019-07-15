@@ -146,16 +146,17 @@ void run_instance
 			aiou2, aiounicast::aio_scheduler_roundrobin, (opt_W * 60));
 	rbc->setID(myID);
 
-	// main loop: algorithm "Randomized Binary Consensus" (5.12, 5.13) [CGR]
+	// initialize algorithm "Randomized Binary Consensus" (5.12, 5.13) [CGR]
 	size_t leader = 0, decisions = 0;
 	bool leader_change = false, execute = false;
 	std::string sn = "";
 	size_t consensus_round = 0, consensus_phase = 0;
-	size_t consensus_proposal = peers.size();
-	size_t consensus_decision = peers.size();
+	size_t consensus_proposal = peers.size(); // undefined
+	size_t consensus_decision = peers.size(); // undefined
 	std::vector<size_t> consensus_val;
 	for (size_t i = 0; i < peers.size(); i++)
-		consensus_val.push_back(peers.size());
+		consensus_val.push_back(peers.size()); // set all to undefined
+	// main loop: for each change of the "leader" an isolated consensus is done  
 	do
 	{
 		// sending messages
@@ -174,7 +175,10 @@ void run_instance
 		if (consensus_phase == 0)
 		{
 			if (opt_verbose > 1)
-				std::cerr << "INFO: Randomized Consensus: Propose" << std::endl;
+			{
+				std::cerr << "INFO: Randomized Binary Consensus:" <<
+					" Propose" << std::endl;
+			}
 			consensus_round = 1, consensus_phase = 1;
 			for (size_t i = 0; i < consensus_val.size(); i++)
 				consensus_val[i] = peers.size(); // set all to undefined
@@ -186,7 +190,7 @@ void run_instance
 				mpz_set_ui(msg, 0UL);
 			std::stringstream rstr; // switch RBC to consensus subprotocol
 			rstr << myID << " and consensus_round = " << consensus_round <<
-				" and decisions = " << decisions;
+				" and previous decisions = " << decisions;
 			rbc->recoverID(rstr.str());
 			rbc->Broadcast(msg); // send CONSENSUS_PROPOSE message
 			rbc->unsetID(); // return to main protocol
@@ -243,7 +247,7 @@ void run_instance
 			}
 			std::stringstream rstr; // switch RBC to consensus subprotocol
 			rstr << myID << " and consensus_round = " << consensus_round <<
-				" and decisions = " << decisions;
+				" and previous decisions = " << decisions;
 			rbc->recoverID(rstr.str());
 			if (rbc->Deliver(msg, p, s, DOTS_TIME_POLL))
 			{
@@ -308,13 +312,13 @@ void run_instance
 						consensus_val_numbers[consensus_val[i]]++;
 				}
 			}
-			// Randomized Binary Consensus: phase 1
+			// Randomized Binary Consensus: phase 1 (algorithm 5.12 [CGR])
 			if ((consensus_val_defined > (peers.size() / 2)) &&
 				(consensus_phase == 1) && (consensus_decision == peers.size()))
 			{
 				if (opt_verbose > 1)
 				{
-					std::cerr << "INFO: Randomized Consensus: #(val)" <<
+					std::cerr << "INFO: Randomized Binary Consensus: #(val)" <<
 						" > N/2 && phase == 1" << std::endl;
 				}
 				for (std::map<size_t, size_t>::const_iterator
@@ -332,13 +336,13 @@ void run_instance
 				mpz_set_ui(msg, consensus_proposal + peers.size());
 				rbc->Broadcast(msg); // send CONSENSUS_DECIDE message
 			}
-			// Randomized Consensus: phase 2
+			// Randomized Consensus: phase 2 (algorithm 5.13 [CGR])
 			if ((consensus_val_defined >= (peers.size() - T_RBC)) &&
 				(consensus_phase == 2) && (consensus_decision == peers.size()))
 			{
 				if (opt_verbose > 1)
 				{
-					std::cerr << "INFO: Randomized Consensus: #(val)" <<
+					std::cerr << "INFO: Randomized Binary Consensus: #(val)" <<
 						" >= N - f && phase == 2" << std::endl;
 				}
 				consensus_phase = 0;
@@ -362,7 +366,7 @@ void run_instance
 						it = consensus_val_numbers.begin();
 						it != consensus_val_numbers.end(); ++it)
 					{
-						consensus_proposal = it->second;
+						consensus_proposal = it->second; // FIXME: randomize
 					}
 					if (consensus_proposal == peers.size())
 					{
@@ -487,6 +491,7 @@ void run_instance
 		}
 		else
 		{
+			// print some statistics about consensus subprotocol
 			if (opt_verbose > 1)
 			{
 				std::cerr << "INFO: decisions = " << decisions << 
@@ -553,7 +558,7 @@ void run_instance
 			else
 				leader_change = true; // HTTP request failed -> change leader
 		}
-		// maintain active_peers
+		// maintain active_peers array
 		time_t current_time = time(NULL);
 		for (size_t i = 0; i < peers.size(); i++)
 		{
@@ -831,7 +836,7 @@ int main
 	while (tcpip_connect((uint16_t)opt_p, true) < peers.size())
 		sleep(1);
 	tcpip_accept();
-// TODO: detach from terminal, redirect stdout and stderr, going to daemon mode
+// TODO: detach from terminal, redirect stdout and stderr, and daemonize itself
 	tcpip_fork();
 	int ret = tcpip_io();
 	tcpip_close();
