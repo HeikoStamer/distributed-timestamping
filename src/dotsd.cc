@@ -148,7 +148,7 @@ void run_instance
 
 	// initialize algorithm "Randomized Binary Consensus" (5.12, 5.13) [CGR]
 	size_t leader = 0, decisions = 0;
-	bool leader_change = false, execute = false;
+	bool leader_change = false;
 	std::string sn = "";
 	size_t consensus_round = 0, consensus_phase = 0;
 	size_t consensus_proposal = peers.size(); // undefined
@@ -163,15 +163,6 @@ void run_instance
 		mpz_t msg;
 		mpz_init_set_ui(msg, 10001UL);
 		rbc->Broadcast(msg); // send a PING message
-		if (execute)
-		{
-			if (whoami == leader)
-			{
-				mpz_set_ui(msg, 10002UL);
-				rbc->Broadcast(msg); // send a EXEC message
-			}
-			execute = false;
-		}
 		if (consensus_phase == 0)
 		{
 			if (opt_verbose > 1)
@@ -210,36 +201,6 @@ void run_instance
 							" from P_" << p << std::endl;
 					}
 					ping[p] = time(NULL);
-				}
-				else if (mpz_cmp_ui(msg, 10002UL) == 0)
-				{
-					if (!dkgpg_forked && (p == leader) && (sn.length() > 0))
-					{
-						if (opt_verbose > 1)
-						{
-							std::cerr << "INFO: P_" << whoami << " process" <<
-								" EXEC from P_" << p << std::endl;
-						}
-						// check that leader is inside active_peers
-						if (std::find(active_peers.begin(), active_peers.end(),
-							peers[leader]) == active_peers.end())
-						{
-							std::cerr << "WARNING: leader \"" <<
-								peers[leader] << "\" is inactive" << std::endl;
-							leader_change = true; // inactive leader -> change
-							continue;
-						}
-						std::string pwlist;
-						for (size_t i = 0; i < active_peers.size(); i++)
-							pwlist += map_passwords[active_peers[i]] + "/";
-						dots_start_process(dkgpg_cmd, active_peers, hostname,
-							pwlist, URI, opt_W, dkgpg_env, dkgpg_pid,
-							dkgpg_forked, dkgpg_time, dkgpg_fd_in,
-							dkgpg_fd_out, dkgpg_fd_err, peers[leader],
-							DOTS_MHD_PORT + leader, sn, opt_verbose);
-					}
-					else
-						rbc->QueueFrom(msg, p);
 				}
 				else
 				{
@@ -543,6 +504,7 @@ void run_instance
 			if (dots_http_request(peers[leader], DOTS_MHD_PORT + leader,
 				"/start", sn, type, opt_verbose))
 			{
+				// FIXME: consensus on retrieved sn required
 				if (opt_verbose > 2)
 				{
 					std::cerr << "INFO: HTTP response of type = \"" <<
@@ -552,7 +514,27 @@ void run_instance
 				if (type != "text/plain")
 					std::cerr << "WARNING: invalid content type" << std::endl;
 				if (sn.length() > 0)
-					execute = true; // work load -> execute program
+				{
+					// check that leader is inside active_peers
+					if (std::find(active_peers.begin(), active_peers.end(),
+						peers[leader]) == active_peers.end())
+					{
+						std::cerr << "WARNING: leader \"" <<
+							peers[leader] << "\" is inactive" << std::endl;
+						leader_change = true; // inactive leader -> change
+					}
+					else
+					{
+						std::string pwlist;
+						for (size_t i = 0; i < active_peers.size(); i++)
+							pwlist += map_passwords[active_peers[i]] + "/";
+						dots_start_process(dkgpg_cmd, active_peers, hostname,
+							pwlist, URI, opt_W, dkgpg_env, dkgpg_pid,
+							dkgpg_forked, dkgpg_time, dkgpg_fd_in,
+							dkgpg_fd_out, dkgpg_fd_err, peers[leader],
+							DOTS_MHD_PORT + leader, sn, opt_verbose);
+					}
+				}
 				else
 					leader_change = true; // no work load -> change leader
 			}
@@ -580,7 +562,8 @@ void run_instance
 					it = std::unique(active_peers.begin(), active_peers.end());
 					active_peers.resize(std::distance(active_peers.begin(), it));
 				}
-			}			
+			}
+			// FIXME: consensus on active_peers array required
 		}
 		// print statistics
 		if (opt_verbose > 1)
