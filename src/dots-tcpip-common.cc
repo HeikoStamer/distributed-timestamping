@@ -34,7 +34,7 @@ extern std::vector<std::string>	peers;
 extern bool						instance_forked;
 extern bool						signal_caught;
 extern int						opt_verbose;
-extern void						fork_instance(const size_t whoami);
+extern bool						fork_instance(const size_t whoami);
 extern std::stringstream		policyfile;
 
 static const size_t				tcpip_pipe_buffer_size = 4096;
@@ -704,6 +704,11 @@ void tcpip_init
 	// install our own signal handlers to quit
 	memset(&act, 0, sizeof(act));
 	act.sa_handler = &tcpip_sig_handler_quit;
+#ifdef SA_INTERRUPT
+	act.sa_flags = SA_INTERRUPT;
+#else
+	act.sa_flags = SA_RESTART;
+#endif
 	if (sigaction(SIGINT, &act, NULL) < 0)
 	{
 		perror("ERROR: dots-tcpip-common (sigaction)");
@@ -1120,7 +1125,12 @@ void tcpip_fork
 		// fork instance
 		if (opt_verbose)
 			std::cerr << "INFO: forking the protocol instance ..." << std::endl;
-		fork_instance(tcpip_peer2pipe[tcpip_thispeer]);
+		if (!fork_instance(tcpip_peer2pipe[tcpip_thispeer]))
+		{
+			tcpip_close();
+			tcpip_done();
+			exit(-1);
+		}
 	}
 	else
 	{
@@ -1163,7 +1173,7 @@ int tcpip_io
 						std::cerr << thispid << " dumped core" << std::endl;
 					return -1;
 				}
-				else if (WIFEXITED(wstatus))
+				else
 				{
 					if (opt_verbose)
 					{
@@ -1173,7 +1183,6 @@ int tcpip_io
 					}
 					return WEXITSTATUS(wstatus);
 				}
-				return 0;
 			}
 		}
 		std::string next = "";
@@ -1285,7 +1294,7 @@ int tcpip_io
 			}
 		}
 
-		// do I/O for DOTS and MHD
+		// do the I/O for DOTS and MHD
 		fd_set rfds, wfds;
 		MHD_socket maxfd = 0;
 		FD_ZERO(&rfds);
@@ -1303,9 +1312,7 @@ int tcpip_io
 			{
 				std::cerr << "ERROR: file descriptor value of internal" <<
 					" pipe exceeds FD_SETSIZE" << std::endl;
-				tcpip_close();
-				tcpip_done();
-				exit(-1);
+				return -1;
 			}
 		}
 		for (tcpip_mci_t pi = tcpip_broadcast_pipe2socket_in.begin();
@@ -1321,9 +1328,7 @@ int tcpip_io
 			{
 				std::cerr << "ERROR: file descriptor value of internal" <<
 					" pipe exceeds FD_SETSIZE" << std::endl;
-				tcpip_close();
-				tcpip_done();
-				exit(-1);
+				return -1;
 			}
 		}
 		for (size_t i = 0; i < peers.size(); i++)
@@ -1338,9 +1343,7 @@ int tcpip_io
 			{
 				std::cerr << "ERROR: file descriptor value of internal" <<
 					" pipe exceeds FD_SETSIZE" << std::endl;
-				tcpip_close();
-				tcpip_done();
-				exit(-1);
+				return -1;
 			}
 			if (pipefd[thisidx][i][0] < FD_SETSIZE)
 			{
@@ -1352,17 +1355,13 @@ int tcpip_io
 			{
 				std::cerr << "ERROR: file descriptor value of internal" <<
 					" pipe exceeds FD_SETSIZE" << std::endl;
-				tcpip_close();
-				tcpip_done();
-				exit(-1);
+				return -1;
 			}
 		}
 		if (MHD_get_fdset(tcpip_mhd, &rfds, &wfds, NULL, &maxfd) != MHD_YES)
 		{
 			std::cerr << "ERROR: MHD_get_fdset() failed" << std::endl;
-			tcpip_close();
-			tcpip_done();
-			exit(-1);
+			return -1;
 		}
 		struct timeval tv;
 		tv.tv_sec = 1;
@@ -1379,9 +1378,7 @@ int tcpip_io
 			else
 			{
 				perror("ERROR: dots-tcpip-common (select)");
-				tcpip_close();
-				tcpip_done();
-				exit(-1);
+				return -1;
 			}
 		}
 		if (retval == 0)
@@ -1407,9 +1404,7 @@ int tcpip_io
 					else
 					{
 						perror("ERROR: dots-tcpip-common (read)");
-						tcpip_close();
-						tcpip_done();
-						exit(-1);
+						return -1;
 					}
 				}
 				else if (len == 0)
@@ -1467,9 +1462,7 @@ int tcpip_io
 							else
 							{
 								perror("ERROR: dots-tcpip-common (write)");
-								tcpip_close();
-								tcpip_done();
-								exit(-1);
+								return -1;
 							}
 						}
 						else
@@ -1500,9 +1493,7 @@ int tcpip_io
 					else
 					{
 						perror("ERROR: dots-tcpip-common (read)");
-						tcpip_close();
-						tcpip_done();
-						exit(-1);
+						return -1;
 					}
 				}
 				else if (len == 0)
@@ -1561,9 +1552,7 @@ int tcpip_io
 							else
 							{
 								perror("ERROR: dots-tcpip-common (write)");
-								tcpip_close();
-								tcpip_done();
-								exit(-1);
+								return -1;
 							}
 						}
 						else
@@ -1593,9 +1582,7 @@ int tcpip_io
 					else
 					{
 						perror("ERROR: dots-tcpip-common (read)");
-						tcpip_close();
-						tcpip_done();
-						exit(-1);
+						return -1;
 					}
 				}
 				else if (len == 0)
@@ -1649,9 +1636,7 @@ int tcpip_io
 							else
 							{
 								perror("ERROR: dots-tcpip-common (write)");
-								tcpip_close();
-								tcpip_done();
-								exit(-1);
+								return -1;
 							}
 						}
 						else
@@ -1687,9 +1672,7 @@ int tcpip_io
 					else
 					{
 						perror("ERROR: dots-tcpip-common (read)");
-						tcpip_close();
-						tcpip_done();
-						exit(-1);
+						return -1;
 					}
 				}
 				else if (len == 0)
@@ -1743,9 +1726,7 @@ int tcpip_io
 							else
 							{
 								perror("ERROR: dots-tcpip-common (write)");
-								tcpip_close();
-								tcpip_done();
-								exit(-1);
+								return -1;
 							}
 						}
 						else
@@ -1766,9 +1747,7 @@ int tcpip_io
 		if (MHD_run_from_select(tcpip_mhd, &rfds, &wfds, NULL) != MHD_YES)
 		{
 			std::cerr << "ERROR: MHD_run_from_select() failed" << std::endl;
-			tcpip_close();
-			tcpip_done();
-			exit(-1);
+			return -1;
 		}
 	}
 }

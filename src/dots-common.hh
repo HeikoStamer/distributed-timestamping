@@ -74,6 +74,7 @@
 		 const int opt_verbose);
 	void dots_kill_process
 		(const pid_t pid,
+		 const int sig,
 		 const int opt_verbose);
 	bool dots_encrypt_fuzzy
 		(const std::string &in,

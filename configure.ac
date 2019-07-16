@@ -18,11 +18,11 @@
 #
 # (Process this file with autoconf to produce a configure script.)
 
-AC_REVISION([20190715])
+AC_REVISION([20190716])
 AC_PREREQ(2.61)
 
 AC_INIT([Distributed OpenPGP Timestamping Service], [0.0.2],
-	[HeikoStamer@gmx.net], [dots], [TBA])
+	[HeikoStamer@gmx.net], [dots], [https://savannah.nongnu.org/projects/distributed-timestamping/])
 
 AC_LANG(C++)
 AC_CONFIG_SRCDIR([src/dotsd.cc])
@@ -41,8 +41,9 @@ AC_DEFINE(DOTS_TIME_POLL, 1, [Define the timeout for RBC channel polling in\
  seconds])
 AC_DEFINE(DOTS_TIME_LOOP, 30, [Define number of seconds to stay inside inner\
  loop])
-AC_DEFINE(DOTS_TIME_SYNC, 60, [Define number of seconds for synchronization])
-AC_DEFINE(DOTS_TIME_KILL, 900, [Define number of seconds until a stalled DKGPG\
+AC_DEFINE(DOTS_TIME_TERM, 800, [Define number of seconds until a running DKGPG\
+ process is terminated])
+AC_DEFINE(DOTS_TIME_KILL, 900, [Define number of seconds until a running DKGPG\
  process is killed])
 AC_DEFINE(DOTS_TIME_INACTIVE, 150, [Define number of seconds without PING\
  received that turns a peer inactive])

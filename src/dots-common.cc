@@ -364,11 +364,12 @@ dkgpg_args.push_back("-V"); // -V FIXME: remove because output may contain secre
 
 void dots_kill_process
 	(const pid_t pid,
+	 const int sig,
 	 const int opt_verbose)
 {
 	if (opt_verbose)
-		std::cerr << "INFO: kill(" << pid << ", SIGTERM)" << std::endl;
-	if (kill(pid, SIGTERM))
+		std::cerr << "INFO: kill(" << pid << ", " << sig << ")" << std::endl;
+	if (kill(pid, sig))
 		perror("WARNING: dots_kill_process (kill)");
 }
 

@@ -448,8 +448,12 @@ void run_instance
 				dkgpg_pid = 0;
 				sn = "";
 			}
+			// send SIGTERM to executed DKGPG process
+			if (dkgpg_forked && (time(NULL) > (dkgpg_time + DOTS_TIME_TERM)))
+				dots_kill_process(dkgpg_pid, SIGTERM, opt_verbose);
+			// send SIGKILL to executed DKGPG process
 			if (dkgpg_forked && (time(NULL) > (dkgpg_time + DOTS_TIME_KILL)))
-				dots_kill_process(dkgpg_pid, opt_verbose); // kill DKGPG process
+				dots_kill_process(dkgpg_pid, SIGKILL, opt_verbose); 
 		}
 		else
 		{
@@ -576,7 +580,7 @@ void run_instance
 	// kill executed program
 	if (dkgpg_forked)
 	{
-		dots_kill_process(dkgpg_pid, opt_verbose);
+		dots_kill_process(dkgpg_pid, SIGKILL, opt_verbose);
 		sleep(DOTS_TIME_POLL);
 		if (waitpid(dkgpg_pid, NULL, WNOHANG) != dkgpg_pid)
 			perror("WARNING: run_instance (waitpid)");
@@ -601,13 +605,13 @@ void run_instance
 	delete aiou, delete aiou2;
 }
 
-void fork_instance
+bool fork_instance
 	(const size_t whoami)
 {
 	if ((pid[whoami] = fork()) < 0)
 	{
 		perror("ERROR: fork_instance (fork)");
-		exit(-1);
+		return false;
 	}
 	else
 	{
@@ -627,6 +631,7 @@ void fork_instance
 			instance_forked = true;
 		}
 	}
+	return true;
 }
 
 int main
