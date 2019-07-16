@@ -453,9 +453,11 @@ void run_instance
 				dots_kill_process(dkgpg_pid, SIGTERM, opt_verbose);
 			// send SIGKILL to executed DKGPG process
 			if (dkgpg_forked && (time(NULL) > (dkgpg_time + DOTS_TIME_KILL)))
+				dots_kill_process(dkgpg_pid, SIGKILL, opt_verbose);
+			if (dkgpg_forked && signal_caught)
 				dots_kill_process(dkgpg_pid, SIGKILL, opt_verbose); 
 		}
-		else
+		else if (!signal_caught)
 		{
 			// print some statistics about consensus subprotocol
 			if (opt_verbose > 1)
@@ -817,6 +819,7 @@ int main
 	}
 	
 	// create underlying point-to-point channels over TCP/IP
+	int ret = 0;
 	tcpip_init(hostname);
 	tcpip_bindports((uint16_t)opt_p, false);
 	tcpip_bindports((uint16_t)opt_p, true);
@@ -826,8 +829,10 @@ int main
 		sleep(1);
 	tcpip_accept();
 // TODO: detach from terminal, redirect stdout and stderr, and daemonize itself
-	tcpip_fork();
-	int ret = tcpip_io();
+	if (tcpip_fork())
+		ret = tcpip_io();
+	else
+		ret = -1; // fork to protocol instance failed
 	tcpip_close();
 	tcpip_done();
 		

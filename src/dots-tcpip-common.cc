@@ -110,17 +110,18 @@ static const char *tcpip_mhd_notpage = "ERROR: signature/timestamp/log"
 	" not found";
 struct MHD_Daemon *tcpip_mhd;
 
-// This is the signal handler called when receiving SIGINT, SIGQUIT,
-// and SIGTERM, respectively.
-static RETSIGTYPE tcpip_sig_handler_quit(int sig)
+// This signal handler is called when receiving SIGINT, SIGQUIT, and
+// SIGTERM, respectively.
+static RETSIGTYPE tcpip_sig_handler_quit
+	(int sig)
 {
 	signal_caught = true;
-	// child process?
-	if (instance_forked && (pid[tcpip_peer2pipe[tcpip_thispeer]] == 0))
+	// parent process?
+	if (instance_forked)
 	{
 		if (opt_verbose)
 		{
-			std::cerr << "tcpip_sig_handler_quit(): child got signal " <<
+			std::cerr << "tcpip_sig_handler_quit(): parent got signal " <<
 				sig << std::endl;
 		}
 	}
@@ -128,22 +129,15 @@ static RETSIGTYPE tcpip_sig_handler_quit(int sig)
 	{
 		if (opt_verbose)
 		{
-			std::cerr << "tcpip_sig_handler_quit(): parent got signal " <<
+			std::cerr << "tcpip_sig_handler_quit(): child got signal " <<
 				sig << std::endl;
 		}
-		// remove our own signal handler and quit
-		signal(SIGINT, SIG_DFL);
-		signal(SIGQUIT, SIG_DFL);
-		signal(SIGTERM, SIG_DFL);
-		tcpip_close();
-		tcpip_done();
-		signal(SIGPIPE, SIG_DFL);
-		exit(-1);
 	}
 }
 
-// This is the signal handler called when receiving SIGPIPE.
-static RETSIGTYPE tcpip_sig_handler_pipe(int sig)
+// This signal handler is called when receiving SIGPIPE.
+static RETSIGTYPE tcpip_sig_handler_pipe
+	(int sig)
 {
 	if (opt_verbose)
 	{
@@ -550,7 +544,7 @@ static int tcpip_mhd_callback
 					for (size_t i = 0; i < pwd1.length(); i++)
 						pwd2 += pwd1[i];
 					std::string encrypted_sn;
-					if (!dots_encrypt_fuzzy(sn, pwd2, encrypted_sn))
+					if (!dots_encrypt_fuzzy_short(sn, pwd2, encrypted_sn))
 						encrypted_sn = "FAILED";
 					// deliver dynamic page with instructions
 					std::stringstream tmp;
@@ -771,7 +765,7 @@ void tcpip_bindports
 		{
 			std::cerr << "ERROR: resolving wildcard address failed: ";
 			if (ret == EAI_SYSTEM)
-				perror("dots-tcpip-common (getaddrinfo)");
+				perror("dots-tcpip-common:tcpip_bindports (getaddrinfo)");
 			else
 				std::cerr << gai_strerror(ret);
 			std::cerr << std::endl;
@@ -785,7 +779,7 @@ void tcpip_bindports
 			if ((sockfd = socket(rp->ai_family, rp->ai_socktype,
 				rp->ai_protocol)) < 0)
 			{
-				perror("WARNING: dots-tcpip-common (socket)");
+				perror("WARNING: dots-tcpip-common:tcpip_bindports (socket)");
 				continue; // try next address
 			}
 			char hbuf[NI_MAXHOST], sbuf[NI_MAXSERV];
@@ -797,12 +791,12 @@ void tcpip_bindports
 			{
 				std::cerr << "ERROR: resolving wildcard address failed: ";
 				if (ret == EAI_SYSTEM)
-					perror("dots-tcpip-common (getnameinfo)");
+					perror("dots-tcpip-common:tcpip_bindports (getnameinfo)");
 				else
 					std::cerr << gai_strerror(ret);
 				std::cerr << std::endl;
 				if (close(sockfd) < 0)
-					perror("WARNING: dots-tcpip-common (close)");
+					perror("WARNING: dots-tcpip-common:tcpip_bindports (close)");
 				freeaddrinfo(res);
 				tcpip_close();
 				tcpip_done();
@@ -815,9 +809,9 @@ void tcpip_bindports
 			}
 			if (bind(sockfd, rp->ai_addr, rp->ai_addrlen) < 0)
 			{
-				perror("WARNING: dots-tcpip-common (bind)");
+				perror("WARNING: dots-tcpip-common:tcpip_bindports (bind)");
 				if (close(sockfd) < 0)
-					perror("WARNING: dots-tcpip-common (close)");
+					perror("WARNING: dots-tcpip-common:tcpip_bindports (close)");
 				sockfd = -1;
 				continue; // try next address
 			}
@@ -834,9 +828,9 @@ void tcpip_bindports
 		}
 		else if (listen(sockfd, SOMAXCONN) < 0)
 		{
-			perror("ERROR: dots-tcpip-common (listen)");
+			perror("ERROR: dots-tcpip-common:tcpip_bindports (listen)");
 			if (close(sockfd) < 0)
-				perror("WARNING: dots-tcpip-common (close)");
+				perror("WARNING: dots-tcpip-common:tcpip_bindports (close)");
 			tcpip_close();
 			tcpip_done();
 			exit(-1);
@@ -890,7 +884,7 @@ size_t tcpip_connect
 				std::cerr << "ERROR: resolving hostname \"" <<
 					peers[i] << "\" failed: ";
 				if (ret == EAI_SYSTEM)
-					perror("dots-tcpip-common (getaddrinfo)");
+					perror("dots-tcpip-common:tcpip_connect (getaddrinfo)");
 				else
 					std::cerr << gai_strerror(ret);
 				std::cerr << std::endl;
@@ -904,15 +898,15 @@ size_t tcpip_connect
 				if ((sockfd = socket(rp->ai_family, rp->ai_socktype,
 					rp->ai_protocol)) < 0)
 				{
-					perror("WARNING: dots-tcpip-common (socket)");
+					perror("WARNING: dots-tcpip-common:tcpip_connect (socket)");
 					continue; // try next address
 				}
 				if (connect(sockfd, rp->ai_addr, rp->ai_addrlen) < 0)
 				{
 					if (errno != ECONNREFUSED)
-						perror("WARNING: dots-tcpip-common (connect)");					
+						perror("WARNING: dots-tcpip-common:tcpip_connect (connect)");					
 					if (close(sockfd) < 0)
-						perror("WARNING: dots-tcpip-common (close)");
+						perror("WARNING: dots-tcpip-common:tcpip_connect (close)");
 					continue; // try next address
 				}
 				else
@@ -927,12 +921,12 @@ size_t tcpip_connect
 						std::cerr << "ERROR: resolving hostname \"" <<
 							peers[i] << "\" failed: ";
 						if (ret == EAI_SYSTEM)
-							perror("dots-tcpip-common (getnameinfo)");
+							perror("dots-tcpip-common:tcpip_connect (getnameinfo)");
 						else
 							std::cerr << gai_strerror(ret);
 						std::cerr << std::endl;
 						if (close(sockfd) < 0)
-							perror("WARNING: dots-tcpip-common (close)");
+							perror("WARNING: dots-tcpip-common:tcpip_connect (close)");
 						freeaddrinfo(res);
 						tcpip_close();
 						tcpip_done();
@@ -1023,12 +1017,12 @@ void tcpip_accept
 			if ((errno == EAGAIN) || (errno == EINTR))
 			{
 				if (errno == EAGAIN)
-					perror("WARNING: dots-tcpip-common (select)");
+					perror("WARNING: dots-tcpip-common:tcpip_accept (select)");
 				continue;
 			}
 			else
 			{
-				perror("ERROR: dots-tcpip-common (select)");
+				perror("ERROR: dots-tcpip-common:tcpip_accept (select)");
 				tcpip_close();
 				tcpip_done();
 				exit(-1);
@@ -1047,7 +1041,7 @@ void tcpip_accept
 				int connfd = accept(pi->second, (struct sockaddr*)&sin, &slen);
 				if (connfd < 0)
 				{
-					perror("ERROR: dots-tcpip-common (accept)");
+					perror("ERROR: dots-tcpip-common:tcpip_accept (accept)");
 					tcpip_close();
 					tcpip_done();
 					exit(-1);
@@ -1060,7 +1054,7 @@ void tcpip_accept
 				{
 					std::cerr << "ERROR: resolving incoming address failed: ";
 					if (ret == EAI_SYSTEM)
-						perror("dots-tcpip-common (getnameinfo)");
+						perror("dots-tcpip-common:tcpip_accept (getnameinfo)");
 					else
 						std::cerr << gai_strerror(ret);
 					std::cerr << std::endl;
@@ -1086,7 +1080,7 @@ void tcpip_accept
 				int connfd = accept(pi->second, (struct sockaddr*)&sin, &slen);
 				if (connfd < 0)
 				{
-					perror("ERROR: dots-tcpip-common (accept)");
+					perror("ERROR: dots-tcpip-common:tcpip_accept (accept)");
 					exit(-1);
 				}
 				tcpip_broadcast_pipe2socket_in[pi->first] = connfd;
@@ -1097,7 +1091,7 @@ void tcpip_accept
 				{
 					std::cerr << "ERROR: resolving incoming address failed: ";
 					if (ret == EAI_SYSTEM)
-						perror("dots-tcpip-common (getnameinfo)");
+						perror("dots-tcpip-common:tcpip_accept (getnameinfo)");
 					else
 						std::cerr << gai_strerror(ret);
 					std::cerr << std::endl;
@@ -1116,7 +1110,7 @@ void tcpip_accept
 	}
 }
 
-void tcpip_fork
+bool tcpip_fork
 	()
 {
 	if ((tcpip_pipe2socket_in.size() == peers.size()) &&
@@ -1126,19 +1120,14 @@ void tcpip_fork
 		if (opt_verbose)
 			std::cerr << "INFO: forking the protocol instance ..." << std::endl;
 		if (!fork_instance(tcpip_peer2pipe[tcpip_thispeer]))
-		{
-			tcpip_close();
-			tcpip_done();
-			exit(-1);
-		}
+			return false;
 	}
 	else
 	{
 		std::cerr << "ERROR: not enough connections established" << std::endl;
-		tcpip_close();
-		tcpip_done();
-		exit(-1);
+		return false;
 	}
+	return true;
 }
 
 int tcpip_io
@@ -1146,7 +1135,7 @@ int tcpip_io
 {
 	size_t thisidx = tcpip_peer2pipe[tcpip_thispeer]; // index of this peer
 	std::string current = ""; // S/N selected for processing
-	while (1)
+	while (!signal_caught)
 	{
 		if (instance_forked)
 		{
@@ -1156,7 +1145,7 @@ int tcpip_io
 			int ret = waitpid(thispid, &wstatus, WNOHANG);
 			if (ret < 0)
 			{
-				perror("WARNING: dots-tcpip-common (waitpid)");
+				perror("WARNING: dots-tcpip-common:tcpip_io (waitpid)");
 			}
 			else if (ret == thispid)
 			{
@@ -1372,12 +1361,12 @@ int tcpip_io
 			if ((errno == EAGAIN) || (errno == EINTR))
 			{
 				if (errno == EAGAIN)
-					perror("WARNING: dots-tcpip-common (select)");
+					perror("WARNING: dots-tcpip-common:tcpip_io (select)");
 				continue;
 			}
 			else
 			{
-				perror("ERROR: dots-tcpip-common (select)");
+				perror("ERROR: dots-tcpip-common:tcpip_io (select)");
 				return -1;
 			}
 		}
@@ -1398,12 +1387,12 @@ int tcpip_io
 					}
 					else if (errno == EAGAIN)
 					{
-						perror("WARNING: dots-tcpip-common (read)");
+						perror("WARNING: dots-tcpip-common:tcpip_io (read)");
 						continue;
 					}
 					else
 					{
-						perror("ERROR: dots-tcpip-common (read)");
+						perror("ERROR: dots-tcpip-common:tcpip_io (read)");
 						return -1;
 					}
 				}
@@ -1450,7 +1439,7 @@ int tcpip_io
 							}
 							else if (errno == EAGAIN)
 							{
-								perror("WARNING: dots-tcpip-common (write)");
+								perror("WARNING: dots-tcpip-common:tcpip_io (write)");
 								if (opt_verbose)
 								{
 									std::cerr << "INFO: sleeping for write" <<
@@ -1461,7 +1450,7 @@ int tcpip_io
 							}
 							else
 							{
-								perror("ERROR: dots-tcpip-common (write)");
+								perror("ERROR: dots-tcpip-common:tcpip_io (write)");
 								return -1;
 							}
 						}
@@ -1487,12 +1476,12 @@ int tcpip_io
 					}
 					else if (errno == EAGAIN)
 					{
-						perror("WARNING: dots-tcpip-common (read)");
+						perror("WARNING: dots-tcpip-common:tcpip_io (read)");
 						continue;
 					}
 					else
 					{
-						perror("ERROR: dots-tcpip-common (read)");
+						perror("ERROR: dots-tcpip-common:tcpip_io (read)");
 						return -1;
 					}
 				}
@@ -1540,7 +1529,7 @@ int tcpip_io
 							}
 							else if (errno == EAGAIN)
 							{
-								perror("WARNING: dots-tcpip-common (write)");
+								perror("WARNING: dots-tcpip-common:tcpip_io (write)");
 								if (opt_verbose)
 								{
 									std::cerr << "INFO: sleeping for write" <<
@@ -1551,7 +1540,7 @@ int tcpip_io
 							}
 							else
 							{
-								perror("ERROR: dots-tcpip-common (write)");
+								perror("ERROR: dots-tcpip-common:tcpip_io (write)");
 								return -1;
 							}
 						}
@@ -1576,12 +1565,12 @@ int tcpip_io
 					}
 					else if (errno == EAGAIN)
 					{
-						perror("WARNING: dots-tcpip-common (read)");
+						perror("WARNING: dots-tcpip-common:tcpip_io (read)");
 						continue;
 					}
 					else
 					{
-						perror("ERROR: dots-tcpip-common (read)");
+						perror("ERROR: dots-tcpip-common:tcpip_io (read)");
 						return -1;
 					}
 				}
@@ -1616,7 +1605,7 @@ int tcpip_io
 							}
 							else if (errno == EAGAIN)
 							{
-								perror("WARNING: dots-tcpip-common (write)");
+								perror("WARNING: dots-tcpip-common:tcpip_io (write)");
 								if (opt_verbose)
 								{
 									std::cerr << "INFO: sleeping for write" <<
@@ -1635,7 +1624,7 @@ int tcpip_io
 							}
 							else
 							{
-								perror("ERROR: dots-tcpip-common (write)");
+								perror("ERROR: dots-tcpip-common:tcpip_io (write)");
 								return -1;
 							}
 						}
@@ -1666,12 +1655,12 @@ int tcpip_io
 					}
 					else if (errno == EAGAIN)
 					{
-						perror("WARNING: dots-tcpip-common (read)");
+						perror("WARNING: dots-tcpip-common:tcpip_io (read)");
 						continue;
 					}
 					else
 					{
-						perror("ERROR: dots-tcpip-common (read)");
+						perror("ERROR: dots-tcpip-common:tcpip_io (read)");
 						return -1;
 					}
 				}
@@ -1706,7 +1695,7 @@ int tcpip_io
 							}
 							else if (errno == EAGAIN)
 							{
-								perror("WARNING: dots-tcpip-common (write)");
+								perror("WARNING: dots-tcpip-common:tcpip_io (write)");
 								if (opt_verbose)
 								{
 									std::cerr << "INFO: sleeping for write" <<
@@ -1725,7 +1714,7 @@ int tcpip_io
 							}
 							else
 							{
-								perror("ERROR: dots-tcpip-common (write)");
+								perror("ERROR: dots-tcpip-common:tcpip_io (write)");
 								return -1;
 							}
 						}
@@ -1750,6 +1739,8 @@ int tcpip_io
 			return -1;
 		}
 	}
+	sleep(5 * DOTS_TIME_POLL);
+	return 0;
 }
 
 void tcpip_close
@@ -1759,37 +1750,37 @@ void tcpip_close
 		pi != tcpip_pipe2socket_in.end(); ++pi)
 	{
 		if (close(pi->second) < 0)
-			perror("WARNING: dots-tcpip-common (close)");
+			perror("WARNING: dots-tcpip-common:tcpip_close (close)");
 	}
 	for (tcpip_mci_t pi = tcpip_pipe2socket_out.begin();
 		pi != tcpip_pipe2socket_out.end(); ++pi)
 	{
 		if (close(pi->second) < 0)
-			perror("WARNING: dots-tcpip-common (close)");
+			perror("WARNING: dots-tcpip-common:tcpip_close (close)");
 	}
 	for (tcpip_mci_t pi = tcpip_broadcast_pipe2socket_in.begin();
 		pi != tcpip_broadcast_pipe2socket_in.end(); ++pi)
 	{
 		if (close(pi->second) < 0)
-			perror("WARNING: dots-tcpip-common (close)");
+			perror("WARNING: dots-tcpip-common:tcpip_close (close)");
 	}
 	for (tcpip_mci_t pi = tcpip_broadcast_pipe2socket_out.begin();
 		pi != tcpip_broadcast_pipe2socket_out.end(); ++pi)
 	{
 		if (close(pi->second) < 0)
-			perror("WARNING: dots-tcpip-common (close)");
+			perror("WARNING: dots-tcpip-common:tcpip_close (close)");
 	}
 	for (tcpip_mci_t pi = tcpip_pipe2socket.begin();
 		pi != tcpip_pipe2socket.end(); ++pi)
 	{
 		if (close(pi->second) < 0)
-			perror("WARNING: dots-tcpip-common (close)");
+			perror("WARNING: dots-tcpip-common:tcpip_close (close)");
 	}
 	for (tcpip_mci_t pi = tcpip_broadcast_pipe2socket.begin();
 		pi != tcpip_broadcast_pipe2socket.end(); ++pi)
 	{
 		if (close(pi->second) < 0)
-			perror("WARNING: dots-tcpip-common (close)");
+			perror("WARNING: dots-tcpip-common:tcpip_close (close)");
 	}
 }
 
@@ -1802,34 +1793,34 @@ void tcpip_done
 		if (opt_verbose)
 			std::cerr << "INFO: kill(" << thispid << ", SIGTERM)" << std::endl;
 		if (kill(thispid, SIGTERM))
-			perror("WARNING: dots-tcpip-common (kill)");
+			perror("WARNING: dots-tcpip-common:tcpip_done (kill)");
 		if (opt_verbose)
 		{
 			std::cerr << "INFO: waitpid(" << thispid << ", NULL, 0)" <<
 				std::endl;
 		}
 		if (waitpid(thispid, NULL, 0) != thispid)
-			perror("WARNING: dots-tcpip-common (waitpid)");
+			perror("WARNING: dots-tcpip-common:tcpip_done (waitpid)");
 	}
 	for (size_t i = 0; i < peers.size(); i++)
 	{
 		for (size_t j = 0; j < peers.size(); j++)
 		{
 			if ((close(pipefd[i][j][0]) < 0) || (close(pipefd[i][j][1]) < 0))
-				perror("WARNING: dots-tcpip-common (close)");
+				perror("WARNING: dots-tcpip-common:tcpip_done (close)");
 			if ((close(broadcast_pipefd[i][j][0]) < 0) ||
 				(close(broadcast_pipefd[i][j][1]) < 0))
 			{
-				perror("WARNING: dots-tcpip-common (close)");
+				perror("WARNING: dots-tcpip-common:tcpip_done (close)");
 			}
 		}
 	}
 	if ((close(self_pipefd[0]) < 0) || (close(self_pipefd[1]) < 0))
-		perror("WARNING: dots-tcpip-common (close)");
+		perror("WARNING: dots-tcpip-common:tcpip_done (close)");
 	if ((close(broadcast_self_pipefd[0]) < 0) ||
 		(close(broadcast_self_pipefd[1]) < 0))
 	{
-		perror("WARNING: dots-tcpip-common (close)");
+		perror("WARNING: dots-tcpip-common:tcpip_done (close)");
 	}
 	MHD_stop_daemon(tcpip_mhd);
 }

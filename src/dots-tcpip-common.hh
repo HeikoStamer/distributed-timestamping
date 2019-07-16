@@ -53,7 +53,7 @@
 		(const uint16_t start, const bool broadcast);
 	void tcpip_accept
 		();
-	void tcpip_fork
+	bool tcpip_fork
 		();
 	int tcpip_io
 		();
