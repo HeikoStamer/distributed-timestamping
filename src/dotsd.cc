@@ -148,7 +148,7 @@ void run_instance
 
 	// initialize algorithm "Randomized Binary Consensus" (5.12, 5.13) [CGR]
 	size_t leader = 0, decisions = 0;
-	bool leader_change = false;
+	bool leader_change = false, trigger_decide = false;
 	std::string sn = "";
 	size_t consensus_round = 0, consensus_phase = 0;
 	size_t consensus_proposal = peers.size(); // undefined
@@ -253,7 +253,7 @@ void run_instance
 							" from P_" << p << std::endl;
 					}
 					consensus_decision = (mpz_get_ui(msg) - (2 * peers.size()));
-					consensus_phase = 3; // trigger Decide event
+					trigger_decide = true; // trigger Decide event
 				}
 				else
 				{
@@ -495,8 +495,9 @@ void run_instance
 					std::cerr << "INFO: P_" << i << " is active " << std::endl;
 			}
 			// Decide event: choose a (new) leader
-			if ((consensus_phase == 3) && (consensus_decision < peers.size()))
+			if (trigger_decide && (consensus_decision < peers.size()))
 			{
+				trigger_decide = false;
 				decisions++;
 				consensus_phase = 0;
 				sn = ""; // start new round with empty S/N and a new leader
@@ -510,7 +511,7 @@ void run_instance
 			if (dots_http_request(peers[leader], DOTS_MHD_PORT + leader,
 				"/start", sn, type, opt_verbose))
 			{
-				// FIXME: consensus on retrieved sn required
+				// FIXME: consensus on retrieved sn required (or at least whether sn has been obtained)
 				if (opt_verbose > 2)
 				{
 					std::cerr << "INFO: HTTP response of type = \"" <<
