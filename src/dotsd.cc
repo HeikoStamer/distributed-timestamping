@@ -408,24 +408,23 @@ void run_instance
 							WEXITSTATUS(wstatus) << std::endl;
 					}
 				}
-				std::stringstream efname, ofname, efnew, ofnew;
+				std::stringstream eft, oft, efn, ofn;
 				if ((WIFEXITED(wstatus) && (WEXITSTATUS(wstatus) != 0)) ||
 					!WIFEXITED(wstatus))
 				{
-					efname << "dotsd_" << hostname << "_" << sn << "_error";
-					efnew << "dotsd_" << hostname << "_" << sn << "_error.txt";
+					eft << "dotsd_" << hostname << "_" << sn << "_error";
+					efn << "dotsd_" << hostname << "_" << sn << "_error.txt";
 				}
 				else
 				{
-					efname << "dotsd_" << hostname << "_" << sn << "_success";
-					efnew << "dotsd_" << hostname << "_" << sn << "_success.txt";
-					ofname << "dotsd_" << hostname << "_" << sn << "_stamp";
-					ofnew << "dotsd_" << hostname << "_" << sn << "_stamp.asc";
-					
-					if (rename((ofname.str()).c_str(), (ofnew.str()).c_str()) < 0)
+					eft << "dotsd_" << hostname << "_" << sn << "_success";
+					efn << "dotsd_" << hostname << "_" << sn << "_success.txt";
+					oft << "dotsd_" << hostname << "_" << sn << "_stamp";
+					ofn << "dotsd_" << hostname << "_" << sn << "_stamp.asc";
+					if (rename((oft.str()).c_str(), (ofn.str()).c_str()) < 0)
 						perror("WARNING: run_instance (rename)");
 				}
-				std::ofstream efs((efname.str()).c_str(), 
+				std::ofstream efs((eft.str()).c_str(), 
 					std::ofstream::out | std::ofstream::trunc);
 				if (!efs.is_open() || !efs.good())
 				{
@@ -434,7 +433,10 @@ void run_instance
 				else
 				{
 					if (WIFEXITED(wstatus))
-						efs << WEXITSTATUS(wstatus) << std::endl;
+					{
+						efs << "exit code " << WEXITSTATUS(wstatus) <<
+							std::endl;
+					}
 					else if (WIFSIGNALED(wstatus))
 					{
 						efs << "terminated by signal " << WTERMSIG(wstatus) <<
@@ -448,7 +450,7 @@ void run_instance
 					{
 						char buffer[1025];
 						memset(buffer, 0, sizeof(buffer));
-						num = read(dkgpg_fd_out, buffer, 1024);
+						num = read(dkgpg_fd_out, buffer, 1024); // FIXME: blocks, if WIFSIGNALED(wstatus)
 						if (num > 0)
 							efs << buffer; // write to file
 					}
@@ -459,7 +461,7 @@ void run_instance
 					{
 						char buffer[1025];
 						memset(buffer, 0, sizeof(buffer));
-						num = read(dkgpg_fd_err, buffer, 1024);
+						num = read(dkgpg_fd_err, buffer, 1024); // FIXME: blocks, if WIFSIGNALED(wstatus)
 						if (num > 0)
 							efs << buffer; // write to file
 					}
@@ -468,13 +470,14 @@ void run_instance
 					if (!efs.good())
 					{
 						std::cerr << "WARNING: writing to file \"" <<
-							efname.str() << "\" failed" << std::endl;
+							eft.str() << "\" failed" << std::endl;
 					}
 					efs.close();
-					if (rename((efname.str()).c_str(), (efnew.str()).c_str()) < 0)
+					if (rename((eft.str()).c_str(), (efn.str()).c_str()) < 0)
 						perror("WARNING: run_instance (rename)");
 				}
-				if ((close(dkgpg_fd_in) < 0) || (close(dkgpg_fd_out) < 0) ||
+				if ((close(dkgpg_fd_in) < 0) ||
+					(close(dkgpg_fd_out) < 0) ||
 					(close(dkgpg_fd_err) < 0))
 				{
 					perror("WARNING: run_instance (close)");

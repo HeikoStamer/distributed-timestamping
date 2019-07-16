@@ -292,7 +292,7 @@ bool dots_start_process
 			std::vector<std::string> dkgpg_args;
 			dkgpg_args.push_back(cmd); //
 			dkgpg_args.push_back("-V"); // -V
-dkgpg_args.push_back("-V"); // -V FIXME: remove because output may contain secrets
+dkgpg_args.push_back("-V"); // -V FIXME: remove because output may contain secrets!
 			dkgpg_args.push_back("-a"); // -a
 			std::stringstream serial;
 			serial << "serialnumber@" << lh << ":" << sn;
