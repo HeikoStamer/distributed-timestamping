@@ -347,7 +347,42 @@ void run_instance
 		}
 		while ((time(NULL) < (entry + DOTS_TIME_LOOP)) && !signal_caught);
 		mpz_clear(msg);
-		// check executed program and do other stuff
+		// print some statistics about consensus subprotocol
+		if (opt_verbose > 1)
+		{
+			std::cerr << "INFO: decisions = " << decisions << 
+				" consensus_round = " << consensus_round <<
+				" consensus_phase = " << consensus_phase << std::endl;
+			std::cerr << "INFO: consensus_proposal = ";
+			if (consensus_proposal < peers.size())
+				std::cerr << consensus_proposal << std::endl;
+			else
+				std::cerr << "undefined" << std::endl;
+			std::cerr << "INFO: consensus_decision = ";
+			if (consensus_decision < peers.size())
+				std::cerr << consensus_decision << std::endl;
+			else
+				std::cerr << "undefined" << std::endl;
+		}
+		for (size_t i = 0; i < peers.size(); i++)
+		{
+			if (opt_verbose > 1)
+			{
+				std::cerr << "INFO: consensus_val[" << i << "] = ";
+				if (consensus_val[i] < peers.size())
+					std::cerr << consensus_val[i] << std::endl;
+				else
+					std::cerr << "undefined" << std::endl;
+			}
+			std::vector<std::string>::iterator it;
+			it = std::find(active_peers.begin(), active_peers.end(),
+				peers[i]);
+			if (it == active_peers.end())
+				continue;
+			if (opt_verbose > 1)
+				std::cerr << "INFO: P_" << i << " is active " << std::endl;
+		}
+		// check executed program
 		if (dkgpg_forked)
 		{
 			int wstatus = 0;
@@ -459,45 +494,15 @@ void run_instance
 		}
 		else if (!signal_caught)
 		{
-			// print some statistics about consensus subprotocol
-			if (opt_verbose > 1)
-			{
-				std::cerr << "INFO: decisions = " << decisions << 
-					" consensus_round = " << consensus_round <<
-					" consensus_phase = " << consensus_phase << std::endl;
-				std::cerr << "INFO: consensus_proposal = ";
-				if (consensus_proposal < peers.size())
-					std::cerr << consensus_proposal << std::endl;
-				else
-					std::cerr << "undefined" << std::endl;
-				std::cerr << "INFO: consensus_decision = ";
-				if (consensus_decision < peers.size())
-					std::cerr << consensus_decision << std::endl;
-				else
-					std::cerr << "undefined" << std::endl;
-			}
-			for (size_t i = 0; i < peers.size(); i++)
-			{
-				if (opt_verbose > 1)
-				{
-					std::cerr << "INFO: consensus_val[" << i << "] = ";
-					if (consensus_val[i] < peers.size())
-						std::cerr << consensus_val[i] << std::endl;
-					else
-						std::cerr << "undefined" << std::endl;
-				}
-				std::vector<std::string>::iterator it;
-				it = std::find(active_peers.begin(), active_peers.end(),
-					peers[i]);
-				if (it == active_peers.end())
-					continue;
-				if (opt_verbose > 1)
-					std::cerr << "INFO: P_" << i << " is active " << std::endl;
-			}
 			// Decide event: choose a (new) leader
 			if (trigger_decide && (consensus_decision < peers.size()))
 			{
 				trigger_decide = false;
+if ((leader_change && (consensus_decision == 0)) ||
+	(!leader_change && (consensus_decision == 1)))
+{
+std::cerr << "WARNING WARNING WARNING: diverging state detected" << std::endl;
+}
 				decisions++;
 				consensus_phase = 0;
 				sn = ""; // start new round with empty S/N and a new leader
