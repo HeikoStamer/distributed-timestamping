@@ -241,6 +241,7 @@ bool dots_start_process
 		if (pid == 0)
 		{
 			/* BEGIN child code (execute program) */
+/*
 			if ((dup2(pipe1fd[0], fileno(stdin)) < 0) ||
 				(dup2(pipe2fd[1], fileno(stdout)) < 0) ||
 				(dup2(pipe3fd[1], fileno(stderr)) < 0))
@@ -255,6 +256,7 @@ bool dots_start_process
 				perror("ERROR: dots_start_process (close)");
 				exit(-1);
 			}
+*/
 			std::stringstream ifilename;
 			ifilename << "dotsd_" << hostname << "_" << sn << ".asc";
 			std::string url = "/signature?sn=" + sn;
