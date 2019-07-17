@@ -469,16 +469,19 @@ void run_instance
 				{
 					std::cerr << "WARNING: cannot open error file" << std::endl;
 				}
+				else if (WIFSIGNALED(wstatus))
+				{
+					efs << "terminated by signal " << WTERMSIG(wstatus) <<
+						std::endl;
+					efs.close();
+					if (rename((eft.str()).c_str(), (efn.str()).c_str()) < 0)
+						perror("WARNING: run_instance (rename)");
+				}
 				else
 				{
 					if (WIFEXITED(wstatus))
 					{
 						efs << "exit code " << WEXITSTATUS(wstatus) <<
-							std::endl;
-					}
-					else if (WIFSIGNALED(wstatus))
-					{
-						efs << "terminated by signal " << WTERMSIG(wstatus) <<
 							std::endl;
 					}
 					else
@@ -489,7 +492,7 @@ void run_instance
 					{
 						char buffer[1025];
 						memset(buffer, 0, sizeof(buffer));
-						num = read(dkgpg_fd_out, buffer, 1024); // FIXME: blocks, if WIFSIGNALED(wstatus)
+						num = read(dkgpg_fd_out, buffer, 1024);
 						if (num > 0)
 							efs << buffer; // write to file
 					}
@@ -500,7 +503,7 @@ void run_instance
 					{
 						char buffer[1025];
 						memset(buffer, 0, sizeof(buffer));
-						num = read(dkgpg_fd_err, buffer, 1024); // FIXME: blocks, if WIFSIGNALED(wstatus)
+						num = read(dkgpg_fd_err, buffer, 1024);
 						if (num > 0)
 							efs << buffer; // write to file
 					}
