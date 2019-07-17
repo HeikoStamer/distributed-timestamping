@@ -238,6 +238,8 @@ void run_instance
 								agree = false; // different values detected
 							if (mpz_cmp_ui(exec_sn_val[i], 0UL) == 0)
 								agree = false; // undefined value detected
+							if (mpz_cmp_ui(exec_sn_val[j], 0UL) == 0)
+								agree = false; // undefined value detected
 						}
 					}
 					if (agree)
