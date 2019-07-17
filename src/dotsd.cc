@@ -146,10 +146,18 @@ void run_instance
 			aiou2, aiounicast::aio_scheduler_roundrobin, (opt_W * 60));
 	rbc->setID(myID);
 
-	// initialize algorithm "Randomized Binary Consensus" (5.12, 5.13) [CGR]
+	// initialize main protocol
 	size_t leader = 0, decisions = 0;
-	bool leader_change = false, trigger_decide = false;
+	bool leader_change = false, trigger_decide = false, trigger_execute = false;
 	std::string sn = "";
+	std::vector<mpz_ptr> exec_sn_val;
+	for (size_t i = 0; i < peers.size(); i++)
+	{
+		mpz_ptr tmp = new mpz_t();
+		mpz_init_set_ui(tmp, 0UL); // undefined
+		exec_sn_val.push_back(tmp);
+	}
+	// initialize algorithm "Randomized Binary Consensus" (5.12, 5.13) [CGR]
 	size_t consensus_round = 0, consensus_phase = 0;
 	size_t consensus_proposal = peers.size(); // undefined
 	size_t consensus_decision = peers.size(); // undefined
@@ -161,7 +169,7 @@ void run_instance
 	{
 		// sending messages
 		mpz_t msg;
-		mpz_init_set_ui(msg, 10001UL);
+		mpz_init_set_ui(msg, 1UL);
 		rbc->Broadcast(msg); // send a PING message
 		if (consensus_phase == 0)
 		{
@@ -193,7 +201,7 @@ void run_instance
 			size_t p = 0, s = aiounicast::aio_scheduler_roundrobin;
 			if (rbc->Deliver(msg, p, s, DOTS_TIME_POLL))
 			{
-				if (mpz_cmp_ui(msg, 10001UL) == 0)
+				if (mpz_cmp_ui(msg, 1UL) == 0)
 				{
 					if (opt_verbose > 1)
 					{
@@ -201,6 +209,37 @@ void run_instance
 							" from P_" << p << std::endl;
 					}
 					ping[p] = time(NULL);
+				}
+				else if (mpz_cmp_ui(msg, 1UL) > 0)
+				{
+					if (opt_verbose > 1)
+					{
+						std::cerr << "INFO: P_" << whoami << " received EXEC" <<
+							"_SN from P_" << p << ", m = " << msg << std::endl;
+					}
+					mpz_set(exec_sn_val[p], msg);
+					bool agree = true;
+					for (size_t i = 1; i < exec_sn_val.size(); i++)
+					{
+						if (std::find(active_peers.begin(), active_peers.end(),
+							peers[i]) == active_peers.end())
+						{
+							continue; // ignore, this peer is inactive
+						}
+						for (size_t j = 0; j < i; j++)
+						{
+							if (std::find(active_peers.begin(),
+								active_peers.end(), peers[j]) ==
+								active_peers.end())
+							{
+								continue; // ignore, this peer is inactive
+							}
+							if (mpz_cmp(exec_sn_val[i], exec_sn_val[j]) != 0)
+								agree = false;
+						}
+					}
+					if (agree)
+						trigger_execute = true; // trigger Execute event
 				}
 				else
 				{
@@ -382,7 +421,7 @@ void run_instance
 			if (opt_verbose > 1)
 				std::cerr << "INFO: P_" << i << " is active " << std::endl;
 		}
-		// check executed program
+		// check return of executed program and terminate stalled instances
 		if (dkgpg_forked)
 		{
 			int wstatus = 0;
@@ -497,6 +536,19 @@ void run_instance
 		}
 		else if (!signal_caught)
 		{
+			// Execute event: start external timestamping process
+			if (trigger_execute && (sn.length() > 0))
+			{
+				trigger_execute = false;
+				std::string pwlist;
+				for (size_t i = 0; i < active_peers.size(); i++)
+					pwlist += map_passwords[active_peers[i]] + "/";
+				dots_start_process(dkgpg_cmd, active_peers, hostname,
+					pwlist, URI, opt_W, dkgpg_env, dkgpg_pid,
+					dkgpg_forked, dkgpg_time, dkgpg_fd_in,
+					dkgpg_fd_out, dkgpg_fd_err, peers[leader],
+					DOTS_MHD_PORT + leader, sn, opt_verbose);
+			}
 			// Decide event: choose a (new) leader
 			if (trigger_decide && (consensus_decision < peers.size()))
 			{
@@ -508,18 +560,31 @@ std::cerr << "WARNING WARNING WARNING: diverging state detected" << std::endl;
 }
 				decisions++;
 				consensus_phase = 0;
-				sn = ""; // start new round with empty S/N and a new leader
 				leader += consensus_decision;
 				if (leader == peers.size())
 					leader = 0;
-				leader_change = false;
+				if (consensus_decision > 0)
+				{
+					// start new round with empty S/N and a new leader
+					sn = "";
+					leader_change = false;
+					// invalidate S/N agreement array
+					for (size_t i = 0; i < exec_sn_val.size(); i++)
+						mpz_set_ui(exec_sn_val[i], 0UL); // undefined
+				}
 			}
-			// request work load from leader
+			// request work load from (active) leader
 			std::string type;
-			if (dots_http_request(peers[leader], DOTS_MHD_PORT + leader,
+			if (std::find(active_peers.begin(), active_peers.end(),
+				peers[leader]) == active_peers.end())
+			{
+				std::cerr << "WARNING: leader \"" <<
+					peers[leader] << "\" is inactive" << std::endl;
+				leader_change = true; // inactive -> change leader
+			}
+			else if (dots_http_request(peers[leader], DOTS_MHD_PORT + leader,
 				"/start", sn, type, opt_verbose))
 			{
-				// FIXME: consensus on retrieved sn required (or at least whether sn has been obtained)
 				if (opt_verbose > 2)
 				{
 					std::cerr << "INFO: HTTP response of type = \"" <<
@@ -530,25 +595,17 @@ std::cerr << "WARNING WARNING WARNING: diverging state detected" << std::endl;
 					std::cerr << "WARNING: invalid content type" << std::endl;
 				if (sn.length() > 0)
 				{
-					// check that leader is inside active_peers
-					if (std::find(active_peers.begin(), active_peers.end(),
-						peers[leader]) == active_peers.end())
-					{
-						std::cerr << "WARNING: leader \"" <<
-							peers[leader] << "\" is inactive" << std::endl;
-						leader_change = true; // inactive leader -> change
-					}
-					else
-					{
-						std::string pwlist;
-						for (size_t i = 0; i < active_peers.size(); i++)
-							pwlist += map_passwords[active_peers[i]] + "/";
-						dots_start_process(dkgpg_cmd, active_peers, hostname,
-							pwlist, URI, opt_W, dkgpg_env, dkgpg_pid,
-							dkgpg_forked, dkgpg_time, dkgpg_fd_in,
-							dkgpg_fd_out, dkgpg_fd_err, peers[leader],
-							DOTS_MHD_PORT + leader, sn, opt_verbose);
-					}
+					mpz_t sn_hash, leader_hash;
+					mpz_init(sn_hash);
+					if (mpz_set_str(sn_hash, sn.c_str(), 16) == -1)
+						std::cerr << "WARNING: mpz_set_str() failed" << std::endl;
+					mpz_init_set_ui(leader_hash, leader);
+					mpz_init(msg);
+					tmcg_mpz_shash(msg, 2, sn_hash, leader_hash);
+					mpz_clear(sn_hash);
+					mpz_clear(leader_hash);
+					rbc->Broadcast(msg); // send EXEC_SN message
+					mpz_clear(msg);
 				}
 				else
 					leader_change = true; // no work load -> change leader
@@ -564,21 +621,22 @@ std::cerr << "WARNING WARNING WARNING: diverging state detected" << std::endl;
 			it = std::find(active_peers.begin(), active_peers.end(), peers[i]);
 			if (ping[i] < (current_time - DOTS_TIME_INACTIVE))
 			{
+				// peer timed out
 				if (it != active_peers.end())
 					active_peers.erase(it); // remove inactive peer
 			}
 			else
 			{
-				if (it == active_peers.end())
-				{
-					active_peers.push_back(peers[i]); // add reactivated peer
-					// canonicalize active_peers
-					std::sort(active_peers.begin(), active_peers.end());
-					it = std::unique(active_peers.begin(), active_peers.end());
-					active_peers.resize(std::distance(active_peers.begin(), it));
-				}
+				// peer is on-time
+				if (it != active_peers.end())
+					continue; // ignore, peer is already active
+				active_peers.push_back(peers[i]); // add reactivated peer
+				// canonicalize active_peers
+				std::sort(active_peers.begin(), active_peers.end());
+				it = std::unique(active_peers.begin(), active_peers.end());
+				active_peers.resize(std::distance(active_peers.begin(), it));
 			}
-			// FIXME: consensus on active_peers array required
+			// TODO: group-consensus on active_peers array required
 		}
 		// print statistics
 		if (opt_verbose > 1)
@@ -595,6 +653,12 @@ std::cerr << "WARNING WARNING WARNING: diverging state detected" << std::endl;
 		sleep(DOTS_TIME_POLL);
 		if (waitpid(dkgpg_pid, NULL, WNOHANG) != dkgpg_pid)
 			perror("WARNING: run_instance (waitpid)");
+	}
+	// release allocated ressources of main protocol
+	for (size_t i = 0; i < exec_sn_val.size(); i++)
+	{
+		mpz_clear(exec_sn_val[i]);
+		delete [] exec_sn_val[i];
 	}
 	// release RBC channel
 	delete rbc;
@@ -766,7 +830,7 @@ int main
 	}
 	if (port.length())
 		opt_p = strtoul(port.c_str(), NULL, 10); // set TCP start port
-	if ((opt_p < 1) || (opt_p > 65535))
+	if ((opt_p < 1024) || (opt_p > 65535))
 	{
 		std::cerr << "ERROR: no valid TCP start port given" << std::endl;
 		return -1;
@@ -841,7 +905,7 @@ int main
 	if (tcpip_fork())
 		ret = tcpip_io();
 	else
-		ret = -1; // fork to protocol instance failed
+		ret = -100; // fork to protocol instance failed
 	tcpip_close();
 	tcpip_done();
 		
