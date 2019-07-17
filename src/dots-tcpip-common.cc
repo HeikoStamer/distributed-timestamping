@@ -1745,11 +1745,11 @@ int tcpip_io
 		if (MHD_run_from_select(tcpip_mhd, &rfds, &wfds, NULL) != MHD_YES)
 		{
 			std::cerr << "ERROR: MHD_run_from_select() failed" << std::endl;
-			return -1;
+			return -205;
 		}
 	}
 	sleep(5 * DOTS_TIME_POLL); // sleep few seconds to terminate gracefully
-	return 0;
+	return -206;
 }
 
 void tcpip_close
