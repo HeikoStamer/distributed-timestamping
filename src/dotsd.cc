@@ -351,7 +351,7 @@ void run_instance
 					std::cerr << "INFO: Randomized Binary Consensus: #(val)" <<
 						" >= N - f && phase == 2" << std::endl;
 				}
-//FIXME				consensus_phase = 0;
+				consensus_phase = 3; // DEVIATION: "imaginary phase" [CGR] 
 				// As "common coin" we use the so-called "Independent Choice",
 				// however, in bad cases this results in an exponential number
 				// of consensus rounds for termination.
