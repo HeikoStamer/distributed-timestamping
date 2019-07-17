@@ -235,7 +235,9 @@ void run_instance
 								continue; // ignore, this peer is inactive
 							}
 							if (mpz_cmp(exec_sn_val[i], exec_sn_val[j]) != 0)
-								agree = false;
+								agree = false; // different values detected
+							if (mpz_cmp_ui(exec_sn_val[i], 0UL) == 0)
+								agree = false; // undefined value detected
 						}
 					}
 					if (agree)
@@ -347,7 +349,7 @@ void run_instance
 					std::cerr << "INFO: Randomized Binary Consensus: #(val)" <<
 						" >= N - f && phase == 2" << std::endl;
 				}
-//				consensus_phase = 0;
+//FIXME				consensus_phase = 0;
 				// As "common coin" we use the so-called "Independent Choice",
 				// however, in bad cases this results in an exponential number
 				// of consensus rounds for termination.
@@ -527,6 +529,9 @@ void run_instance
 				dkgpg_forked = false;
 				dkgpg_pid = 0;
 				sn = "";
+				// invalidate S/N agreement array
+				for (size_t i = 0; i < exec_sn_val.size(); i++)
+					mpz_set_ui(exec_sn_val[i], 0UL); // undefined
 			}
 			// send SIGTERM to executed DKGPG process
 			if (dkgpg_forked && (time(NULL) > (dkgpg_time + DOTS_TIME_TERM)))
@@ -534,7 +539,7 @@ void run_instance
 			// send SIGKILL to executed DKGPG process
 			if (dkgpg_forked && (time(NULL) > (dkgpg_time + DOTS_TIME_KILL)))
 				dots_kill_process(dkgpg_pid, SIGKILL, opt_verbose);
-			if (dkgpg_forked && signal_caught)
+			else if (dkgpg_forked && signal_caught)
 				dots_kill_process(dkgpg_pid, SIGKILL, opt_verbose); 
 		}
 		// 3. handle events and request work load
@@ -553,6 +558,9 @@ void run_instance
 					dkgpg_fd_out, dkgpg_fd_err, peers[leader],
 					DOTS_MHD_PORT + leader, sn, opt_verbose);
 			}
+		}
+		if (!dkgpg_forked && !signal_caught)
+		{
 			// Decide event: choose a (new) leader
 			if (trigger_decide && (consensus_decision < peers.size()))
 			{
@@ -563,7 +571,6 @@ if ((leader_change && (consensus_decision == 0)) ||
 std::cerr << "WARNING WARNING WARNING: diverging state detected" << std::endl;
 }
 				decisions++;
-				consensus_phase = 0;
 				leader += consensus_decision;
 				if (leader == peers.size())
 					leader = 0;
@@ -576,8 +583,9 @@ std::cerr << "WARNING WARNING WARNING: diverging state detected" << std::endl;
 					for (size_t i = 0; i < exec_sn_val.size(); i++)
 						mpz_set_ui(exec_sn_val[i], 0UL); // undefined
 				}
+				consensus_phase = 0;
 			}
-			// request work load from (active) leader
+			// request work load from active leader
 			std::string type;
 			if (std::find(active_peers.begin(), active_peers.end(),
 				peers[leader]) == active_peers.end())
