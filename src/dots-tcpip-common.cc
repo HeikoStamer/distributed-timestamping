@@ -1160,7 +1160,7 @@ int tcpip_io
 					}
 					if (WCOREDUMP(wstatus))
 						std::cerr << thispid << " dumped core" << std::endl;
-					return -1;
+					return -200;
 				}
 				else
 				{
@@ -1301,7 +1301,7 @@ int tcpip_io
 			{
 				std::cerr << "ERROR: file descriptor value of internal" <<
 					" pipe exceeds FD_SETSIZE" << std::endl;
-				return -1;
+				return -201;
 			}
 		}
 		for (tcpip_mci_t pi = tcpip_broadcast_pipe2socket_in.begin();
@@ -1317,7 +1317,7 @@ int tcpip_io
 			{
 				std::cerr << "ERROR: file descriptor value of internal" <<
 					" pipe exceeds FD_SETSIZE" << std::endl;
-				return -1;
+				return -201;
 			}
 		}
 		for (size_t i = 0; i < peers.size(); i++)
@@ -1332,7 +1332,7 @@ int tcpip_io
 			{
 				std::cerr << "ERROR: file descriptor value of internal" <<
 					" pipe exceeds FD_SETSIZE" << std::endl;
-				return -1;
+				return -201;
 			}
 			if (pipefd[thisidx][i][0] < FD_SETSIZE)
 			{
@@ -1344,13 +1344,13 @@ int tcpip_io
 			{
 				std::cerr << "ERROR: file descriptor value of internal" <<
 					" pipe exceeds FD_SETSIZE" << std::endl;
-				return -1;
+				return -201;
 			}
 		}
 		if (MHD_get_fdset(tcpip_mhd, &rfds, &wfds, NULL, &maxfd) != MHD_YES)
 		{
 			std::cerr << "ERROR: MHD_get_fdset() failed" << std::endl;
-			return -1;
+			return -201;
 		}
 		struct timeval tv;
 		tv.tv_sec = 1;
@@ -1361,13 +1361,13 @@ int tcpip_io
 			if ((errno == EAGAIN) || (errno == EINTR))
 			{
 				if (errno == EAGAIN)
-					perror("WARNING: dots-tcpip-common:tcpip_io (select)");
+					perror("WARNING: tcpip_io (select)");
 				continue;
 			}
 			else
 			{
-				perror("ERROR: dots-tcpip-common:tcpip_io (select)");
-				return -1;
+				perror("ERROR: tcpip_io (select)");
+				return -202;
 			}
 		}
 		if (retval == 0)
@@ -1387,13 +1387,13 @@ int tcpip_io
 					}
 					else if (errno == EAGAIN)
 					{
-						perror("WARNING: dots-tcpip-common:tcpip_io (read)");
+						perror("WARNING: tcpip_io (read)");
 						continue;
 					}
 					else
 					{
-						perror("ERROR: dots-tcpip-common:tcpip_io (read)");
-						return -1;
+						perror("ERROR: tcpip_io (read)");
+						return -203;
 					}
 				}
 				else if (len == 0)
@@ -1439,7 +1439,7 @@ int tcpip_io
 							}
 							else if (errno == EAGAIN)
 							{
-								perror("WARNING: dots-tcpip-common:tcpip_io (write)");
+								perror("WARNING: tcpip_io (write)");
 								if (opt_verbose)
 								{
 									std::cerr << "INFO: sleeping for write" <<
@@ -1450,8 +1450,10 @@ int tcpip_io
 							}
 							else
 							{
-								perror("ERROR: dots-tcpip-common:tcpip_io (write)");
-								return -1;
+								perror("ERROR: tcpip_io (write)");
+								std::cerr << "DEBUG: pipefd[" << pi->first <<
+									"][" << thisidx << "]" << std::endl;
+								return -204;
 							}
 						}
 						else
@@ -1476,13 +1478,13 @@ int tcpip_io
 					}
 					else if (errno == EAGAIN)
 					{
-						perror("WARNING: dots-tcpip-common:tcpip_io (read)");
+						perror("WARNING: tcpip_io (read)");
 						continue;
 					}
 					else
 					{
-						perror("ERROR: dots-tcpip-common:tcpip_io (read)");
-						return -1;
+						perror("ERROR: tcpip_io (read)");
+						return -203;
 					}
 				}
 				else if (len == 0)
@@ -1529,7 +1531,7 @@ int tcpip_io
 							}
 							else if (errno == EAGAIN)
 							{
-								perror("WARNING: dots-tcpip-common:tcpip_io (write)");
+								perror("WARNING: tcpip_io (write)");
 								if (opt_verbose)
 								{
 									std::cerr << "INFO: sleeping for write" <<
@@ -1540,8 +1542,11 @@ int tcpip_io
 							}
 							else
 							{
-								perror("ERROR: dots-tcpip-common:tcpip_io (write)");
-								return -1;
+								perror("ERROR: tcpip_io (write)");
+								std::cerr << "DEBUG: broadcast_pipefd[" <<
+									pi->first << "][" << thisidx << "]" <<
+									std::endl;
+								return -204;
 							}
 						}
 						else
@@ -1565,13 +1570,13 @@ int tcpip_io
 					}
 					else if (errno == EAGAIN)
 					{
-						perror("WARNING: dots-tcpip-common:tcpip_io (read)");
+						perror("WARNING: tcpip_io (read)");
 						continue;
 					}
 					else
 					{
-						perror("ERROR: dots-tcpip-common:tcpip_io (read)");
-						return -1;
+						perror("ERROR: tcpip_io (read)");
+						return -203;
 					}
 				}
 				else if (len == 0)
@@ -1605,7 +1610,7 @@ int tcpip_io
 							}
 							else if (errno == EAGAIN)
 							{
-								perror("WARNING: dots-tcpip-common:tcpip_io (write)");
+								perror("WARNING: tcpip_io (write)");
 								if (opt_verbose)
 								{
 									std::cerr << "INFO: sleeping for write" <<
@@ -1624,8 +1629,10 @@ int tcpip_io
 							}
 							else
 							{
-								perror("ERROR: dots-tcpip-common:tcpip_io (write)");
-								return -1;
+								perror("ERROR: tcpip_io (write)");
+								std::cerr << "DEBUG: tcpip_pipe2socket_out[" <<
+									i << "]" << std::endl;
+								return -204;
 							}
 						}
 						else
@@ -1655,13 +1662,13 @@ int tcpip_io
 					}
 					else if (errno == EAGAIN)
 					{
-						perror("WARNING: dots-tcpip-common:tcpip_io (read)");
+						perror("WARNING: tcpip_io (read)");
 						continue;
 					}
 					else
 					{
-						perror("ERROR: dots-tcpip-common:tcpip_io (read)");
-						return -1;
+						perror("ERROR: tcpip_io (read)");
+						return -203;
 					}
 				}
 				else if (len == 0)
@@ -1695,7 +1702,7 @@ int tcpip_io
 							}
 							else if (errno == EAGAIN)
 							{
-								perror("WARNING: dots-tcpip-common:tcpip_io (write)");
+								perror("WARNING: tcpip_io (write)");
 								if (opt_verbose)
 								{
 									std::cerr << "INFO: sleeping for write" <<
@@ -1714,8 +1721,10 @@ int tcpip_io
 							}
 							else
 							{
-								perror("ERROR: dots-tcpip-common:tcpip_io (write)");
-								return -1;
+								perror("ERROR: tcpip_io (write)");
+								std::cerr << "DEBUG: tcpip_broadcast_pipe2" <<
+									"socket_out[" << i << "]" << std::endl;
+								return -204;
 							}
 						}
 						else
@@ -1739,7 +1748,7 @@ int tcpip_io
 			return -1;
 		}
 	}
-	sleep(5 * DOTS_TIME_POLL);
+	sleep(5 * DOTS_TIME_POLL); // sleep few seconds to terminate gracefully
 	return 0;
 }
 
