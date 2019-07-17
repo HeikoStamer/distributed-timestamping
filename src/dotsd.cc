@@ -347,7 +347,7 @@ void run_instance
 					std::cerr << "INFO: Randomized Binary Consensus: #(val)" <<
 						" >= N - f && phase == 2" << std::endl;
 				}
-				consensus_phase = 0;
+//				consensus_phase = 0;
 				// As "common coin" we use the so-called "Independent Choice",
 				// however, in bad cases this results in an exponential number
 				// of consensus rounds for termination.
@@ -386,7 +386,7 @@ void run_instance
 		}
 		while ((time(NULL) < (entry + DOTS_TIME_LOOP)) && !signal_caught);
 		mpz_clear(msg);
-		// print some statistics about consensus subprotocol
+		// 1. print statistics about consensus subprotocol
 		if (opt_verbose > 1)
 		{
 			std::cerr << "INFO: decisions = " << decisions << 
@@ -421,7 +421,7 @@ void run_instance
 			if (opt_verbose > 1)
 				std::cerr << "INFO: P_" << i << " is active " << std::endl;
 		}
-		// check return of executed program and terminate stalled instances
+		// 2. check return of executed program and terminate stalled instances
 		if (dkgpg_forked)
 		{
 			int wstatus = 0;
@@ -537,7 +537,8 @@ void run_instance
 			if (dkgpg_forked && signal_caught)
 				dots_kill_process(dkgpg_pid, SIGKILL, opt_verbose); 
 		}
-		else if (!signal_caught)
+		// 3. handle events and request work load
+		if (!dkgpg_forked && !signal_caught)
 		{
 			// Execute event: start external timestamping process
 			if (trigger_execute && (sn.length() > 0))
@@ -616,7 +617,7 @@ std::cerr << "WARNING WARNING WARNING: diverging state detected" << std::endl;
 			else
 				leader_change = true; // HTTP request failed -> change leader
 		}
-		// maintain active_peers array
+		// 4. maintain active_peers array
 		time_t current_time = time(NULL);
 		for (size_t i = 0; i < peers.size(); i++)
 		{
@@ -641,7 +642,7 @@ std::cerr << "WARNING WARNING WARNING: diverging state detected" << std::endl;
 			}
 			// TODO: group-consensus on active_peers array required
 		}
-		// print statistics
+		// 5. print statistics about main protocol
 		if (opt_verbose > 1)
 		{
 			std::cerr << "INFO: |active_peers| = " << active_peers.size() <<
