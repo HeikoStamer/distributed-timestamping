@@ -38,6 +38,7 @@ extern bool						fork_instance(const size_t whoami);
 extern std::stringstream		policyfile;
 
 static const size_t				tcpip_pipe_buffer_size = 4096;
+uint16_t						tcpip_start = 0;
 
 std::string 					tcpip_thispeer;
 std::map<std::string, size_t> 	tcpip_peer2pipe;
@@ -765,7 +766,7 @@ void tcpip_bindports
 		{
 			std::cerr << "ERROR: resolving wildcard address failed: ";
 			if (ret == EAI_SYSTEM)
-				perror("dots-tcpip-common:tcpip_bindports (getaddrinfo)");
+				perror("tcpip_bindports (getaddrinfo)");
 			else
 				std::cerr << gai_strerror(ret);
 			std::cerr << std::endl;
@@ -779,7 +780,7 @@ void tcpip_bindports
 			if ((sockfd = socket(rp->ai_family, rp->ai_socktype,
 				rp->ai_protocol)) < 0)
 			{
-				perror("WARNING: dots-tcpip-common:tcpip_bindports (socket)");
+				perror("WARNING: tcpip_bindports (socket)");
 				continue; // try next address
 			}
 			char hbuf[NI_MAXHOST], sbuf[NI_MAXSERV];
@@ -791,12 +792,12 @@ void tcpip_bindports
 			{
 				std::cerr << "ERROR: resolving wildcard address failed: ";
 				if (ret == EAI_SYSTEM)
-					perror("dots-tcpip-common:tcpip_bindports (getnameinfo)");
+					perror("tcpip_bindports (getnameinfo)");
 				else
 					std::cerr << gai_strerror(ret);
 				std::cerr << std::endl;
 				if (close(sockfd) < 0)
-					perror("WARNING: dots-tcpip-common:tcpip_bindports (close)");
+					perror("WARNING: tcpip_bindports (close)");
 				freeaddrinfo(res);
 				tcpip_close();
 				tcpip_done();
@@ -809,9 +810,9 @@ void tcpip_bindports
 			}
 			if (bind(sockfd, rp->ai_addr, rp->ai_addrlen) < 0)
 			{
-				perror("WARNING: dots-tcpip-common:tcpip_bindports (bind)");
+				perror("WARNING: tcpip_bindports (bind)");
 				if (close(sockfd) < 0)
-					perror("WARNING: dots-tcpip-common:tcpip_bindports (close)");
+					perror("WARNING: tcpip_bindports (close)");
 				sockfd = -1;
 				continue; // try next address
 			}
@@ -828,9 +829,9 @@ void tcpip_bindports
 		}
 		else if (listen(sockfd, SOMAXCONN) < 0)
 		{
-			perror("ERROR: dots-tcpip-common:tcpip_bindports (listen)");
+			perror("ERROR: tcpip_bindports (listen)");
 			if (close(sockfd) < 0)
-				perror("WARNING: dots-tcpip-common:tcpip_bindports (close)");
+				perror("WARNING: tcpip_bindports (close)");
 			tcpip_close();
 			tcpip_done();
 			exit(-1);
@@ -845,6 +846,7 @@ void tcpip_bindports
 size_t tcpip_connect
 	(const uint16_t start, const bool broadcast)
 {
+	tcpip_start = start; // save TCP/IP starting port
 	if (opt_verbose > 2)
 	{
 		std::cerr << "INFO: tcpip_connect(" << start << ", " <<
@@ -884,7 +886,7 @@ size_t tcpip_connect
 				std::cerr << "ERROR: resolving hostname \"" <<
 					peers[i] << "\" failed: ";
 				if (ret == EAI_SYSTEM)
-					perror("dots-tcpip-common:tcpip_connect (getaddrinfo)");
+					perror("tcpip_connect (getaddrinfo)");
 				else
 					std::cerr << gai_strerror(ret);
 				std::cerr << std::endl;
@@ -898,15 +900,15 @@ size_t tcpip_connect
 				if ((sockfd = socket(rp->ai_family, rp->ai_socktype,
 					rp->ai_protocol)) < 0)
 				{
-					perror("WARNING: dots-tcpip-common:tcpip_connect (socket)");
+					perror("WARNING: tcpip_connect (socket)");
 					continue; // try next address
 				}
 				if (connect(sockfd, rp->ai_addr, rp->ai_addrlen) < 0)
 				{
 					if (errno != ECONNREFUSED)
-						perror("WARNING: dots-tcpip-common:tcpip_connect (connect)");					
+						perror("WARNING: tcpip_connect (connect)");					
 					if (close(sockfd) < 0)
-						perror("WARNING: dots-tcpip-common:tcpip_connect (close)");
+						perror("WARNING: tcpip_connect (close)");
 					continue; // try next address
 				}
 				else
@@ -921,12 +923,12 @@ size_t tcpip_connect
 						std::cerr << "ERROR: resolving hostname \"" <<
 							peers[i] << "\" failed: ";
 						if (ret == EAI_SYSTEM)
-							perror("dots-tcpip-common:tcpip_connect (getnameinfo)");
+							perror("tcpip_connect (getnameinfo)");
 						else
 							std::cerr << gai_strerror(ret);
 						std::cerr << std::endl;
 						if (close(sockfd) < 0)
-							perror("WARNING: dots-tcpip-common:tcpip_connect (close)");
+							perror("WARNING: tcpip_connect (close)");
 						freeaddrinfo(res);
 						tcpip_close();
 						tcpip_done();
@@ -956,6 +958,111 @@ size_t tcpip_connect
 		return tcpip_broadcast_pipe2socket_out.size();
 	else
 		return tcpip_pipe2socket_out.size();
+}
+
+bool tcpip_reconnect
+	(const size_t peer, const bool broadcast)
+{
+	if (opt_verbose > 2)
+	{
+		std::cerr << "INFO: tcpip_reconnect(" << peer << ", " <<
+			(broadcast ? "true" : "false") << ") called" << std::endl;
+	}
+	if ((broadcast && (tcpip_broadcast_pipe2socket_out.count(peer) == 0)) ||
+		(!broadcast && (tcpip_pipe2socket_out.count(peer) == 0)))
+	{
+		uint16_t peers_size = 0;
+		if (peers.size() <= DOTS_MAX_N)
+		{
+			peers_size = (uint16_t)peers.size();
+		}
+		else
+		{
+			std::cerr << "ERROR: too many peers defined" << std::endl;
+			return false;
+		}
+		uint16_t peer_offset = (uint16_t)tcpip_peer2pipe[tcpip_thispeer];
+		uint16_t port = tcpip_start + (peer * peers_size) + peer_offset;
+		int ret;
+		struct addrinfo hints = { 0, 0, 0, 0, 0, 0, 0, 0 }, *res, *rp;
+		hints.ai_family = AF_UNSPEC; // AF_INET; FIXME: resolving IPv4-only
+		hints.ai_socktype = SOCK_STREAM;
+		hints.ai_flags = AI_NUMERICSERV | AI_ADDRCONFIG;
+		if (broadcast)
+			port += peers_size * peers_size; // use different port range
+		std::stringstream ports;
+		ports << port;
+		if ((ret = getaddrinfo(peers[peer].c_str(), (ports.str()).c_str(),
+			&hints, &res)) != 0)
+		{
+			std::cerr << "ERROR: resolving hostname \"" << peers[peer] <<
+				"\" failed: ";
+			if (ret == EAI_SYSTEM)
+				perror("tcpip_reconnect (getaddrinfo)");
+			else
+				std::cerr << gai_strerror(ret);
+			std::cerr << std::endl;
+			return false;
+		}
+		for (rp = res; rp != NULL; rp = rp->ai_next)
+		{
+			int sockfd;
+			if ((sockfd = socket(rp->ai_family, rp->ai_socktype,
+				rp->ai_protocol)) < 0)
+			{
+				perror("WARNING: tcpip_reconnect (socket)");
+				continue; // try next address
+			}
+			if (connect(sockfd, rp->ai_addr, rp->ai_addrlen) < 0)
+			{
+				if (errno != ECONNREFUSED)
+					perror("WARNING: tcpip_reconnect (connect)");					
+				if (close(sockfd) < 0)
+					perror("WARNING: tcpip_reconnect (close)");
+				continue; // try next address
+			}
+			else
+			{
+				char hbuf[NI_MAXHOST], sbuf[NI_MAXSERV];
+				memset(hbuf, 0, sizeof(hbuf));
+				memset(sbuf, 0, sizeof(sbuf));
+				if ((ret = getnameinfo(rp->ai_addr, rp->ai_addrlen,
+					hbuf, sizeof(hbuf), sbuf, sizeof(sbuf),
+					NI_NUMERICHOST | NI_NUMERICSERV)) != 0)
+				{
+					std::cerr << "ERROR: resolving hostname \"" <<
+						peers[peer] << "\" failed: ";
+					if (ret == EAI_SYSTEM)
+						perror("tcpip_reconnect (getnameinfo)");
+					else
+						std::cerr << gai_strerror(ret);
+					std::cerr << std::endl;
+					if (close(sockfd) < 0)
+						perror("WARNING: tcpip_reconnect (close)");
+					freeaddrinfo(res);
+					return false;
+				}
+				if (opt_verbose)
+				{
+					std::cerr << "INFO: resolved hostname \"" << peers[peer] <<
+						"\" to address " << hbuf << std::endl;
+				}
+				if (opt_verbose)
+				{
+					std::cerr << "INFO: connected to host \"" << peers[peer] <<
+						"\" on port " << port << std::endl;
+				}
+				if (broadcast)
+					tcpip_broadcast_pipe2socket_out[peer] = sockfd;
+				else
+					tcpip_pipe2socket_out[peer] = sockfd;
+				freeaddrinfo(res);
+				return true;
+			}
+		}
+		freeaddrinfo(res);
+	}
+	return false;
 }
 
 void tcpip_accept
@@ -1017,12 +1124,12 @@ void tcpip_accept
 			if ((errno == EAGAIN) || (errno == EINTR))
 			{
 				if (errno == EAGAIN)
-					perror("WARNING: dots-tcpip-common:tcpip_accept (select)");
+					perror("WARNING: tcpip_accept (select)");
 				continue;
 			}
 			else
 			{
-				perror("ERROR: dots-tcpip-common:tcpip_accept (select)");
+				perror("ERROR: tcpip_accept (select)");
 				tcpip_close();
 				tcpip_done();
 				exit(-1);
@@ -1041,7 +1148,7 @@ void tcpip_accept
 				int connfd = accept(pi->second, (struct sockaddr*)&sin, &slen);
 				if (connfd < 0)
 				{
-					perror("ERROR: dots-tcpip-common:tcpip_accept (accept)");
+					perror("ERROR: tcpip_accept (accept)");
 					tcpip_close();
 					tcpip_done();
 					exit(-1);
@@ -1054,7 +1161,7 @@ void tcpip_accept
 				{
 					std::cerr << "ERROR: resolving incoming address failed: ";
 					if (ret == EAI_SYSTEM)
-						perror("dots-tcpip-common:tcpip_accept (getnameinfo)");
+						perror("tcpip_accept (getnameinfo)");
 					else
 						std::cerr << gai_strerror(ret);
 					std::cerr << std::endl;
@@ -1080,7 +1187,7 @@ void tcpip_accept
 				int connfd = accept(pi->second, (struct sockaddr*)&sin, &slen);
 				if (connfd < 0)
 				{
-					perror("ERROR: dots-tcpip-common:tcpip_accept (accept)");
+					perror("ERROR: tcpip_accept (accept)");
 					exit(-1);
 				}
 				tcpip_broadcast_pipe2socket_in[pi->first] = connfd;
@@ -1091,7 +1198,7 @@ void tcpip_accept
 				{
 					std::cerr << "ERROR: resolving incoming address failed: ";
 					if (ret == EAI_SYSTEM)
-						perror("dots-tcpip-common:tcpip_accept (getnameinfo)");
+						perror("tcpip_accept (getnameinfo)");
 					else
 						std::cerr << gai_strerror(ret);
 					std::cerr << std::endl;
@@ -1108,6 +1215,44 @@ void tcpip_accept
 			}
 		}
 	}
+}
+
+bool tcpip_reaccept
+	(const size_t peer, const bool broadcast)
+{
+	if (opt_verbose > 2)
+	{
+		std::cerr << "INFO: tcpip_reaccept(" << peer << ", " <<
+			(broadcast ? "true" : "false") << ") called" << std::endl;
+	}
+	bool good = false;
+	if (broadcast)
+	{
+		if (tcpip_broadcast_pipe2socket_in.count(peer) == 0)
+			tcpip_broadcast_pipe2socket_in[peer] = 0;
+		if (tcpip_broadcast_pipe2socket_in[peer] == 0)
+			good = true;
+		if (!good)
+		{
+			tcpip_broadcast_pipe2socket_in.erase(peer);
+			return false;
+		}
+// TODO: 
+	}
+	else
+	{
+		if (tcpip_pipe2socket_in.count(peer) == 0)
+			tcpip_pipe2socket_in[peer] = 0;
+		else if (tcpip_pipe2socket_in[peer] == 0)
+			good = true;
+		if (!good)
+		{
+			tcpip_pipe2socket_in.erase(peer);
+			return false;
+		}
+// TODO: 
+	}
+	return false;
 }
 
 bool tcpip_fork
@@ -1145,7 +1290,7 @@ int tcpip_io
 			int ret = waitpid(thispid, &wstatus, WNOHANG);
 			if (ret < 0)
 			{
-				perror("WARNING: dots-tcpip-common:tcpip_io (waitpid)");
+				perror("WARNING: tcpip_io (waitpid)");
 			}
 			else if (ret == thispid)
 			{
@@ -1400,7 +1545,14 @@ int tcpip_io
 				{
 					std::cerr << "WARNING: connection collapsed for" <<
 						" P_" << pi->first << std::endl;
-					tcpip_pipe2socket_out.erase(pi->first);
+					if (close(tcpip_pipe2socket_in[pi->first]) < 0)
+						perror("WARNING: tcpip_io (close)");
+					tcpip_pipe2socket_in[pi->first] = 0;
+					if (tcpip_reaccept(pi->first, false))
+					{
+						std::cerr << "INFO: reaccept successful" << std::endl;
+						continue;
+					}
 					tcpip_pipe2socket_in.erase(pi->first);
 					break;
 				}
@@ -1491,7 +1643,14 @@ int tcpip_io
 				{
 					std::cerr << "WARNING: broadcast connection collapsed" <<
 						" for P_" << pi->first << std::endl;
-					tcpip_broadcast_pipe2socket_out.erase(pi->first);
+					if (close(tcpip_broadcast_pipe2socket_in[pi->first]) < 0)
+						perror("WARNING: tcpip_io (close)");
+					tcpip_broadcast_pipe2socket_in[pi->first] = 0;
+					if (tcpip_reaccept(pi->first, true))
+					{
+						std::cerr << "INFO: reaccept successful" << std::endl;
+						continue;
+					}
 					tcpip_broadcast_pipe2socket_in.erase(pi->first);
 					break;
 				}
@@ -1619,12 +1778,19 @@ int tcpip_io
 								sleep(1);
 								continue;
 							}
-							else if (errno == ECONNRESET)
+							else if ((errno == ECONNRESET) || (errno == EPIPE))
 							{
 								std::cerr << "WARNING: connection collapsed" <<
 									" for P_" << i << std::endl;
-								tcpip_broadcast_pipe2socket_out.erase(i);
-								tcpip_broadcast_pipe2socket_in.erase(i);
+								if (close(tcpip_pipe2socket_out[i]) < 0)
+									perror("WARNING: tcpip_io (close)");
+								tcpip_pipe2socket_out.erase(i);
+								if (tcpip_reconnect(i, false))
+								{
+									std::cerr << "INFO: reconnect successful" <<
+										std::endl;
+									continue;
+								}
 								break;
 							}
 							else
@@ -1711,12 +1877,19 @@ int tcpip_io
 								sleep(1);
 								continue;
 							}
-							else if (errno == ECONNRESET)
+							else if ((errno == ECONNRESET) || (errno == EPIPE))
 							{
 								std::cerr << "WARNING: broadcast connection" <<
 									" collapsed for P_" << i << std::endl;
+								if (close(tcpip_broadcast_pipe2socket_out[i]) < 0)
+									perror("WARNING: tcpip_io (close)");
 								tcpip_broadcast_pipe2socket_out.erase(i);
-								tcpip_broadcast_pipe2socket_in.erase(i);
+								if (tcpip_reconnect(i, true))
+								{
+									std::cerr << "INFO: reconnect successful" <<
+										std::endl;
+									continue;
+								}
 								break;
 							}
 							else
@@ -1759,37 +1932,37 @@ void tcpip_close
 		pi != tcpip_pipe2socket_in.end(); ++pi)
 	{
 		if (close(pi->second) < 0)
-			perror("WARNING: dots-tcpip-common:tcpip_close (close)");
+			perror("WARNING: tcpip_close (close)");
 	}
 	for (tcpip_mci_t pi = tcpip_pipe2socket_out.begin();
 		pi != tcpip_pipe2socket_out.end(); ++pi)
 	{
 		if (close(pi->second) < 0)
-			perror("WARNING: dots-tcpip-common:tcpip_close (close)");
+			perror("WARNING: tcpip_close (close)");
 	}
 	for (tcpip_mci_t pi = tcpip_broadcast_pipe2socket_in.begin();
 		pi != tcpip_broadcast_pipe2socket_in.end(); ++pi)
 	{
 		if (close(pi->second) < 0)
-			perror("WARNING: dots-tcpip-common:tcpip_close (close)");
+			perror("WARNING: tcpip_close (close)");
 	}
 	for (tcpip_mci_t pi = tcpip_broadcast_pipe2socket_out.begin();
 		pi != tcpip_broadcast_pipe2socket_out.end(); ++pi)
 	{
 		if (close(pi->second) < 0)
-			perror("WARNING: dots-tcpip-common:tcpip_close (close)");
+			perror("WARNING: tcpip_close (close)");
 	}
 	for (tcpip_mci_t pi = tcpip_pipe2socket.begin();
 		pi != tcpip_pipe2socket.end(); ++pi)
 	{
 		if (close(pi->second) < 0)
-			perror("WARNING: dots-tcpip-common:tcpip_close (close)");
+			perror("WARNING: tcpip_close (close)");
 	}
 	for (tcpip_mci_t pi = tcpip_broadcast_pipe2socket.begin();
 		pi != tcpip_broadcast_pipe2socket.end(); ++pi)
 	{
 		if (close(pi->second) < 0)
-			perror("WARNING: dots-tcpip-common:tcpip_close (close)");
+			perror("WARNING: tcpip_close (close)");
 	}
 }
 
@@ -1802,34 +1975,34 @@ void tcpip_done
 		if (opt_verbose)
 			std::cerr << "INFO: kill(" << thispid << ", SIGTERM)" << std::endl;
 		if (kill(thispid, SIGTERM))
-			perror("WARNING: dots-tcpip-common:tcpip_done (kill)");
+			perror("WARNING: tcpip_done (kill)");
 		if (opt_verbose)
 		{
 			std::cerr << "INFO: waitpid(" << thispid << ", NULL, 0)" <<
 				std::endl;
 		}
 		if (waitpid(thispid, NULL, 0) != thispid)
-			perror("WARNING: dots-tcpip-common:tcpip_done (waitpid)");
+			perror("WARNING: tcpip_done (waitpid)");
 	}
 	for (size_t i = 0; i < peers.size(); i++)
 	{
 		for (size_t j = 0; j < peers.size(); j++)
 		{
 			if ((close(pipefd[i][j][0]) < 0) || (close(pipefd[i][j][1]) < 0))
-				perror("WARNING: dots-tcpip-common:tcpip_done (close)");
+				perror("WARNING: tcpip_done (close)");
 			if ((close(broadcast_pipefd[i][j][0]) < 0) ||
 				(close(broadcast_pipefd[i][j][1]) < 0))
 			{
-				perror("WARNING: dots-tcpip-common:tcpip_done (close)");
+				perror("WARNING: tcpip_done (close)");
 			}
 		}
 	}
 	if ((close(self_pipefd[0]) < 0) || (close(self_pipefd[1]) < 0))
-		perror("WARNING: dots-tcpip-common:tcpip_done (close)");
+		perror("WARNING: tcpip_done (close)");
 	if ((close(broadcast_self_pipefd[0]) < 0) ||
 		(close(broadcast_self_pipefd[1]) < 0))
 	{
-		perror("WARNING: dots-tcpip-common:tcpip_done (close)");
+		perror("WARNING: tcpip_done (close)");
 	}
 	MHD_stop_daemon(tcpip_mhd);
 }
