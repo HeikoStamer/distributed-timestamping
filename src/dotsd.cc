@@ -148,7 +148,7 @@ void run_instance
 
 	// initialize main protocol
 	size_t leader = 0, decisions = 0;
-	bool leader_change = false, trigger_decide = false, trigger_execute = false;
+	bool leader_change = false, trigger_decide = false;
 	std::string sn = "";
 	std::vector<mpz_ptr> exec_sn_val;
 	for (size_t i = 0; i < peers.size(); i++)
@@ -218,32 +218,6 @@ void run_instance
 							"_SN from P_" << p << ", m = " << msg << std::endl;
 					}
 					mpz_set(exec_sn_val[p], msg);
-					bool agree = true;
-					for (size_t i = 1; i < exec_sn_val.size(); i++)
-					{
-						if (std::find(active_peers.begin(), active_peers.end(),
-							peers[i]) == active_peers.end())
-						{
-							continue; // ignore, this peer is inactive
-						}
-						for (size_t j = 0; j < i; j++)
-						{
-							if (std::find(active_peers.begin(),
-								active_peers.end(), peers[j]) ==
-								active_peers.end())
-							{
-								continue; // ignore, this peer is inactive
-							}
-							if (mpz_cmp(exec_sn_val[i], exec_sn_val[j]) != 0)
-								agree = false; // different values detected
-							if (mpz_cmp_ui(exec_sn_val[i], 0UL) == 0)
-								agree = false; // undefined value detected
-							if (mpz_cmp_ui(exec_sn_val[j], 0UL) == 0)
-								agree = false; // undefined value detected
-						}
-					}
-					if (agree)
-						trigger_execute = true; // trigger Execute event
 				}
 				else
 				{
@@ -544,13 +518,47 @@ void run_instance
 			else if (dkgpg_forked && signal_caught)
 				dots_kill_process(dkgpg_pid, SIGKILL, opt_verbose); 
 		}
-		// 3. handle events and request work load
-		if (!dkgpg_forked && !signal_caught)
+		// 3. start external timestamping process
+		if (!dkgpg_forked && !signal_caught && (sn.length() > 0))
 		{
-			// Execute event: start external timestamping process
-			if (trigger_execute && (sn.length() > 0))
+			bool agree = true;
+			for (size_t i = 1; i < exec_sn_val.size(); i++)
 			{
-				trigger_execute = false;
+				if (std::find(active_peers.begin(), active_peers.end(),
+					peers[i]) == active_peers.end())
+				{
+					continue; // ignore, this peer is inactive
+				}
+				for (size_t j = 0; j < i; j++)
+				{
+					if (std::find(active_peers.begin(),
+						active_peers.end(), peers[j]) ==
+						active_peers.end())
+					{
+						continue; // ignore, this peer is inactive
+					}
+					if (mpz_cmp(exec_sn_val[i], exec_sn_val[j]) != 0)
+						agree = false; // different values detected
+					if (mpz_cmp_ui(exec_sn_val[i], 0UL) == 0)
+						agree = false; // undefined value detected
+					if (mpz_cmp_ui(exec_sn_val[j], 0UL) == 0)
+						agree = false; // undefined value detected
+					mpz_t sn_hash, leader_hash;
+					mpz_init(sn_hash);
+					if (mpz_set_str(sn_hash, sn.c_str(), 16) == -1)
+						std::cerr << "WARNING: mpz_set_str() failed" << std::endl;
+					mpz_init_set_ui(leader_hash, leader);
+					mpz_init(msg);
+					tmcg_mpz_shash(msg, 2, sn_hash, leader_hash);
+					mpz_clear(sn_hash);
+					mpz_clear(leader_hash);
+					if (mpz_cmp(exec_sn_val[j], msg))
+						agree = false; // wrong hash detected
+					mpz_clear(msg);
+				}
+			}
+			if (agree)
+			{
 				std::string pwlist;
 				for (size_t i = 0; i < active_peers.size(); i++)
 					pwlist += map_passwords[active_peers[i]] + "/";
@@ -561,6 +569,7 @@ void run_instance
 					DOTS_MHD_PORT + leader, sn, opt_verbose);
 			}
 		}
+		// 3. handle events and request work load
 		if (!dkgpg_forked && !signal_caught)
 		{
 			// Decide event: choose a (new) leader
