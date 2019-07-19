@@ -1188,6 +1188,8 @@ void tcpip_accept
 				if (connfd < 0)
 				{
 					perror("ERROR: tcpip_accept (accept)");
+					tcpip_close();
+					tcpip_done();
 					exit(-1);
 				}
 				tcpip_broadcast_pipe2socket_in[pi->first] = connfd;
@@ -1237,7 +1239,6 @@ bool tcpip_reaccept
 			tcpip_broadcast_pipe2socket_in.erase(peer);
 			return false;
 		}
-// TODO: 
 	}
 	else
 	{
@@ -1250,8 +1251,112 @@ bool tcpip_reaccept
 			tcpip_pipe2socket_in.erase(peer);
 			return false;
 		}
-// TODO: 
 	}
+	size_t rounds = 0;
+	do
+	{
+		fd_set rfds;
+		struct timeval tv;
+		int retval, maxfd = 0;
+		FD_ZERO(&rfds);
+		if (broadcast)
+		{
+			FD_SET(tcpip_broadcast_pipe2socket[peer], &rfds);
+			if (tcpip_broadcast_pipe2socket[peer] > maxfd)
+				maxfd = tcpip_broadcast_pipe2socket[peer];
+		}
+		else
+		{
+			FD_SET(tcpip_pipe2socket[peer], &rfds);
+			if (tcpip_pipe2socket[peer] > maxfd)
+				maxfd = tcpip_pipe2socket[peer];
+		}
+		tv.tv_sec = DOTS_TIME_POLL;
+		tv.tv_usec = 0;
+		retval = select((maxfd + 1), &rfds, NULL, NULL, &tv);
+		if (retval < 0)
+		{
+			if ((errno == EAGAIN) || (errno == EINTR))
+			{
+				if (errno == EAGAIN)
+					perror("WARNING: tcpip_reaccept (select)");
+				continue;
+			}
+			else
+			{
+				perror("ERROR: tcpip_reaccept (select)");
+				return false;
+			}
+		}
+		if (retval == 0)
+			return false; // timeout
+		if (!broadcast && FD_ISSET(tcpip_pipe2socket[peer], &rfds))
+		{
+			struct sockaddr_storage sin;
+			socklen_t slen = (socklen_t)sizeof(sin);
+			memset(&sin, 0, sizeof(sin));
+			int connfd = accept(tcpip_pipe2socket[peer], (struct sockaddr*)&sin, &slen);
+			if (connfd < 0)
+			{
+				perror("ERROR: tcpip_reaccept (accept)");
+				return false;
+			}
+			tcpip_pipe2socket_in[peer] = connfd;
+			char ipaddr[INET6_ADDRSTRLEN];
+			int ret;
+			if ((ret = getnameinfo((struct sockaddr *)&sin, slen,
+				ipaddr, sizeof(ipaddr), NULL, 0, NI_NUMERICHOST)) != 0)
+			{
+				std::cerr << "WARNING: resolving incoming address failed: ";
+				if (ret == EAI_SYSTEM)
+					perror("tcpip_reaccept (getnameinfo)");
+				else
+					std::cerr << gai_strerror(ret);
+				std::cerr << std::endl;
+				return true;
+			}
+			if (opt_verbose)
+			{
+				std::cerr << "INFO: accept connection for P_" <<
+					peer << " from address " << ipaddr << std::endl;
+			}
+			return true;
+		}
+		if (broadcast && FD_ISSET(tcpip_broadcast_pipe2socket[peer], &rfds))
+		{
+			struct sockaddr_storage sin;
+			socklen_t slen = (socklen_t)sizeof(sin);
+			memset(&sin, 0, sizeof(sin));
+			int connfd = accept(tcpip_broadcast_pipe2socket[peer], (struct sockaddr*)&sin, &slen);
+			if (connfd < 0)
+			{
+				perror("ERROR: tcpip_reaccept (accept)");
+				return false;
+			}
+			tcpip_broadcast_pipe2socket_in[peer] = connfd;
+			char ipaddr[INET6_ADDRSTRLEN];
+			int ret;
+			if ((ret = getnameinfo((struct sockaddr *)&sin, slen,
+				ipaddr, sizeof(ipaddr), NULL, 0, NI_NUMERICHOST)) != 0)
+			{
+				std::cerr << "WARNING: resolving incoming address failed: ";
+				if (ret == EAI_SYSTEM)
+					perror("tcpip_reaccept (getnameinfo)");
+				else
+					std::cerr << gai_strerror(ret);
+				std::cerr << std::endl;
+				return true;
+			}
+			if (opt_verbose)
+			{
+				std::cerr << "INFO: accept broadcast connection for" <<
+					" P_" << peer << " from address " << 
+					ipaddr << std::endl;
+			}
+			return true;
+		}
+	}
+	while (++rounds < 5);
 	return false;
 }
 
@@ -1275,160 +1380,183 @@ bool tcpip_fork
 	return true;
 }
 
+bool tcpip_work
+	(int &returncode, std::string &current)
+{
+	size_t thisidx = tcpip_peer2pipe[tcpip_thispeer]; // index of this peer
+	if (instance_forked)
+	{
+		// exit, if forked instance has terminated 
+		int wstatus = 0;
+		int thispid = pid[thisidx];
+		int ret = waitpid(thispid, &wstatus, WNOHANG);
+		if (ret < 0)
+		{
+			perror("WARNING: tcpip_io (waitpid)");
+		}
+		else if (ret == thispid)
+		{
+			instance_forked = false;
+			if (!WIFEXITED(wstatus))
+			{
+				std::cerr << "ERROR: protocol instance ";
+				if (WIFSIGNALED(wstatus))
+				{
+					std::cerr << thispid << " terminated by signal " <<
+						WTERMSIG(wstatus) << std::endl;
+				}
+				if (WCOREDUMP(wstatus))
+					std::cerr << thispid << " dumped core" << std::endl;
+				returncode = -200;
+				return false;
+			}
+			else
+			{
+				if (opt_verbose)
+				{
+					std::cerr << "INFO: protocol instance " << thispid <<
+						" terminated with exit status " <<
+						WEXITSTATUS(wstatus) << std::endl;
+				}
+				returncode = WEXITSTATUS(wstatus);
+				return false;
+			}
+		}
+	}
+	std::string next = "";
+	bool started = false;
+	std::vector<std::string> cleanup_submitted, cleanup_failed, cleanup_stamped;
+	time_t current_time = time(NULL);
+	for (tcpip_sn_mci_t q = tcpip_sn2status.begin();
+		q != tcpip_sn2status.end(); ++q)
+	{
+		if (q->second == DOTS_STATUS_STARTED)
+			started = true;
+		if ((q->second == DOTS_STATUS_CONFIRMED) && (next.length() == 0))
+			next = q->first;
+		if (q->second == DOTS_STATUS_SUBMITTED)
+		{
+			time_t st = tcpip_sn2time_submitted[q->first];
+			if (st < (current_time - DOTS_TIME_UNCONFIRMED))
+				cleanup_submitted.push_back(q->first);
+		}
+		else if (q->second == DOTS_STATUS_FAILED)
+		{
+			time_t st = tcpip_sn2time_failed[q->first];
+			if (st < (current_time - DOTS_TIME_LOG))
+				cleanup_failed.push_back(q->first);
+		}
+		else if (q->second == DOTS_STATUS_STAMPED)
+		{
+			time_t st = tcpip_sn2time_stamped[q->first];
+			if (st < (current_time - DOTS_TIME_STAMP))
+				cleanup_stamped.push_back(q->first);
+		}
+	}
+	for (size_t i = 0; i < cleanup_submitted.size(); i++)
+	{
+		tcpip_sn2status.erase(cleanup_submitted[i]);
+		tcpip_sn2signature.erase(cleanup_submitted[i]);
+		tcpip_sn2time_submitted.erase(cleanup_submitted[i]);
+	}
+	for (size_t i = 0; i < cleanup_failed.size(); i++)
+	{
+		tcpip_sn2status.erase(cleanup_failed[i]);
+		tcpip_sn2signature.erase(cleanup_failed[i]);
+		tcpip_sn2log.erase(cleanup_failed[i]);
+		tcpip_sn2time_failed.erase(cleanup_failed[i]);
+	}
+	for (size_t i = 0; i < cleanup_stamped.size(); i++)
+	{
+		tcpip_sn2status.erase(cleanup_failed[i]);
+		tcpip_sn2signature.erase(cleanup_failed[i]);
+		tcpip_sn2timestamp.erase(cleanup_failed[i]);
+		tcpip_sn2time_stamped.erase(cleanup_failed[i]);
+	}
+	if (!started && (next.length() > 0))
+	{
+		current = next;
+		tcpip_sn2status[current] = DOTS_STATUS_STARTED;
+	}
+	if (started && (current.length() > 0))
+	{
+		std::stringstream efilename, ofilename;
+		efilename << "dotsd_" << tcpip_thispeer << "_" << current <<
+			"_error.txt";
+		ofilename << "dotsd_" << tcpip_thispeer << "_" << current <<
+			"_stamp.asc";
+		std::ifstream efs((efilename.str()).c_str(), std::ifstream::in);
+		std::ifstream ofs((ofilename.str()).c_str(), std::ifstream::in);
+		if (efs.is_open())
+		{
+			std::stringstream errorlog;
+			std::string line;
+			while (std::getline(efs, line))
+				errorlog << line << std::endl;
+			if (efs.eof())
+			{
+				tcpip_sn2log[current] = errorlog.str();
+			}
+			else
+			{
+				tcpip_sn2log[current] = "reading from error file \"" +
+					efilename.str() + "\" until EOF failed";
+				std::cerr << "WARNING: " << tcpip_sn2log[current] <<
+					std::endl;
+			}
+			efs.close();
+			tcpip_sn2status[current] = DOTS_STATUS_FAILED;
+			tcpip_sn2time_failed[current] = time(NULL);
+			started = false;
+		}
+		else if (ofs.is_open())
+		{
+			std::stringstream timestamp;
+			std::string line;
+			while (std::getline(ofs, line))
+				timestamp << line << std::endl;
+			if (ofs.eof())
+			{
+				tcpip_sn2status[current] = DOTS_STATUS_STAMPED;
+				tcpip_sn2time_stamped[current] = time(NULL);
+				tcpip_sn2timestamp[current] = timestamp.str();
+				started = false;
+			}
+			else
+			{
+				std::cerr << "WARNING: reading from output file \"" <<
+					ofilename.str() << "\" until EOF failed" << std::endl;
+			}
+			ofs.close();
+		}
+	}
+	return true;
+}
+
 int tcpip_io
 	()
 {
 	size_t thisidx = tcpip_peer2pipe[tcpip_thispeer]; // index of this peer
 	std::string current = ""; // S/N selected for processing
+	char buf_in[peers.size()][tcpip_pipe_buffer_size];
+	char broadcast_buf_in[peers.size()][tcpip_pipe_buffer_size];
+	char buf_out[peers.size()][tcpip_pipe_buffer_size];
+	char broadcast_buf_out[peers.size()][tcpip_pipe_buffer_size];
+	std::vector<size_t> len_in, broadcast_len_in, len_out, broadcast_len_out;
+	for (size_t i = 0; i < peers.size(); i++)
+	{
+		len_in.push_back(0);
+		broadcast_len_in.push_back(0);
+		len_out.push_back(0);
+		broadcast_len_out.push_back(0);
+	}
 	while (!signal_caught)
 	{
-		if (instance_forked)
-		{
-			// exit, if forked instance has terminated 
-			int wstatus = 0;
-			int thispid = pid[thisidx];
-			int ret = waitpid(thispid, &wstatus, WNOHANG);
-			if (ret < 0)
-			{
-				perror("WARNING: tcpip_io (waitpid)");
-			}
-			else if (ret == thispid)
-			{
-				instance_forked = false;
-				if (!WIFEXITED(wstatus))
-				{
-					std::cerr << "ERROR: protocol instance ";
-					if (WIFSIGNALED(wstatus))
-					{
-						std::cerr << thispid << " terminated by signal " <<
-							WTERMSIG(wstatus) << std::endl;
-					}
-					if (WCOREDUMP(wstatus))
-						std::cerr << thispid << " dumped core" << std::endl;
-					return -200;
-				}
-				else
-				{
-					if (opt_verbose)
-					{
-						std::cerr << "INFO: protocol instance " << thispid <<
-							" terminated with exit status " <<
-							WEXITSTATUS(wstatus) << std::endl;
-					}
-					return WEXITSTATUS(wstatus);
-				}
-			}
-		}
-		std::string next = "";
-		bool started = false;
-		std::vector<std::string> cleanup_submitted, cleanup_failed;
-		std::vector<std::string> cleanup_stamped;
-		time_t current_time = time(NULL);
-		for (tcpip_sn_mci_t q = tcpip_sn2status.begin();
-			q != tcpip_sn2status.end(); ++q)
-		{
-			if (q->second == DOTS_STATUS_STARTED)
-				started = true;
-			if ((q->second == DOTS_STATUS_CONFIRMED) && (next.length() == 0))
-				next = q->first;
-			if (q->second == DOTS_STATUS_SUBMITTED)
-			{
-				time_t st = tcpip_sn2time_submitted[q->first];
-				if (st < (current_time - DOTS_TIME_UNCONFIRMED))
-					cleanup_submitted.push_back(q->first);
-			}
-			else if (q->second == DOTS_STATUS_FAILED)
-			{
-				time_t st = tcpip_sn2time_failed[q->first];
-				if (st < (current_time - DOTS_TIME_LOG))
-					cleanup_failed.push_back(q->first);
-			}
-			else if (q->second == DOTS_STATUS_STAMPED)
-			{
-				time_t st = tcpip_sn2time_stamped[q->first];
-				if (st < (current_time - DOTS_TIME_STAMP))
-					cleanup_stamped.push_back(q->first);
-			}
-		}
-		for (size_t i = 0; i < cleanup_submitted.size(); i++)
-		{
-			tcpip_sn2status.erase(cleanup_submitted[i]);
-			tcpip_sn2signature.erase(cleanup_submitted[i]);
-			tcpip_sn2time_submitted.erase(cleanup_submitted[i]);
-		}
-		for (size_t i = 0; i < cleanup_failed.size(); i++)
-		{
-			tcpip_sn2status.erase(cleanup_failed[i]);
-			tcpip_sn2signature.erase(cleanup_failed[i]);
-			tcpip_sn2log.erase(cleanup_failed[i]);
-			tcpip_sn2time_failed.erase(cleanup_failed[i]);
-		}
-		for (size_t i = 0; i < cleanup_stamped.size(); i++)
-		{
-			tcpip_sn2status.erase(cleanup_failed[i]);
-			tcpip_sn2signature.erase(cleanup_failed[i]);
-			tcpip_sn2timestamp.erase(cleanup_failed[i]);
-			tcpip_sn2time_stamped.erase(cleanup_failed[i]);
-		}
-		if (!started && (next.length() > 0))
-		{
-			current = next;
-			tcpip_sn2status[current] = DOTS_STATUS_STARTED;
-		}
-		if (started && (current.length() > 0))
-		{
-			std::stringstream efilename, ofilename;
-			efilename << "dotsd_" << tcpip_thispeer << "_" << current <<
-				"_error.txt";
-			ofilename << "dotsd_" << tcpip_thispeer << "_" << current <<
-				"_stamp.asc";
-			std::ifstream efs((efilename.str()).c_str(), std::ifstream::in);
-			std::ifstream ofs((ofilename.str()).c_str(), std::ifstream::in);
-			if (efs.is_open())
-			{
-				std::stringstream errorlog;
-				std::string line;
-				while (std::getline(efs, line))
-					errorlog << line << std::endl;
-				if (efs.eof())
-				{
-					tcpip_sn2log[current] = errorlog.str();
-				}
-				else
-				{
-					tcpip_sn2log[current] = "reading from error file \"" +
-						efilename.str() + "\" until EOF failed";
-					std::cerr << "WARNING: " << tcpip_sn2log[current] <<
-						std::endl;
-				}
-				efs.close();
-				tcpip_sn2status[current] = DOTS_STATUS_FAILED;
-				tcpip_sn2time_failed[current] = time(NULL);
-				started = false;
-			}
-			else if (ofs.is_open())
-			{
-				std::stringstream timestamp;
-				std::string line;
-				while (std::getline(ofs, line))
-					timestamp << line << std::endl;
-				if (ofs.eof())
-				{
-					tcpip_sn2status[current] = DOTS_STATUS_STAMPED;
-					tcpip_sn2time_stamped[current] = time(NULL);
-					tcpip_sn2timestamp[current] = timestamp.str();
-					started = false;
-				}
-				else
-				{
-					std::cerr << "WARNING: reading from output file \"" <<
-						ofilename.str() << "\" until EOF failed" << std::endl;
-				}
-				ofs.close();
-			}
-		}
-
-		// do the I/O for DOTS and MHD
+		// do some other work beside I/O
+		int ret = 0;
+		if (!tcpip_work(ret, current))
+			return ret;
+		// do buffered I/O for DOTS and MHD
 		fd_set rfds, wfds;
 		MHD_socket maxfd = 0;
 		FD_ZERO(&rfds);
@@ -1465,6 +1593,38 @@ int tcpip_io
 				return -201;
 			}
 		}
+		for (tcpip_mci_t pi = tcpip_pipe2socket_out.begin();
+			pi != tcpip_pipe2socket_out.end(); ++pi)
+		{
+			if (pi->second < FD_SETSIZE)
+			{
+				FD_SET(pi->second, &wfds);
+				if (pi->second > maxfd)
+					maxfd = pi->second;
+			}
+			else
+			{
+				std::cerr << "ERROR: file descriptor value of internal" <<
+					" pipe exceeds FD_SETSIZE" << std::endl;
+				return -201;
+			}
+		}
+		for (tcpip_mci_t pi = tcpip_broadcast_pipe2socket_out.begin();
+			pi != tcpip_broadcast_pipe2socket_out.end(); ++pi)
+		{
+			if (pi->second < FD_SETSIZE)
+			{
+				FD_SET(pi->second, &wfds);
+				if (pi->second > maxfd)
+					maxfd = pi->second;
+			}
+			else
+			{
+				std::cerr << "ERROR: file descriptor value of internal" <<
+					" pipe exceeds FD_SETSIZE" << std::endl;
+				return -201;
+			}
+		}
 		for (size_t i = 0; i < peers.size(); i++)
 		{
 			if (pipefd[thisidx][i][0] < FD_SETSIZE)
@@ -1479,11 +1639,59 @@ int tcpip_io
 					" pipe exceeds FD_SETSIZE" << std::endl;
 				return -201;
 			}
-			if (pipefd[thisidx][i][0] < FD_SETSIZE)
+			if (pipefd[i][thisidx][1] < FD_SETSIZE)
+			{
+				FD_SET(pipefd[i][thisidx][1], &wfds);
+				if (pipefd[i][thisidx][1] > maxfd)
+					maxfd = pipefd[i][thisidx][1];
+			}
+			else
+			{
+				std::cerr << "ERROR: file descriptor value of internal" <<
+					" pipe exceeds FD_SETSIZE" << std::endl;
+				return -201;
+			}
+			if (self_pipefd[1] < FD_SETSIZE)
+			{
+				FD_SET(self_pipefd[1], &wfds);
+				if (self_pipefd[1] > maxfd)
+					maxfd = self_pipefd[1];
+			}
+			else
+			{
+				std::cerr << "ERROR: file descriptor value of internal" <<
+					" pipe exceeds FD_SETSIZE" << std::endl;
+				return -201;
+			}
+			if (broadcast_pipefd[thisidx][i][0] < FD_SETSIZE)
 			{
 				FD_SET(broadcast_pipefd[thisidx][i][0], &rfds);
 				if (broadcast_pipefd[thisidx][i][0] > maxfd)
 					maxfd = broadcast_pipefd[thisidx][i][0];
+			}
+			else
+			{
+				std::cerr << "ERROR: file descriptor value of internal" <<
+					" pipe exceeds FD_SETSIZE" << std::endl;
+				return -201;
+			}
+			if (broadcast_pipefd[i][thisidx][1] < FD_SETSIZE)
+			{
+				FD_SET(broadcast_pipefd[i][thisidx][1], &wfds);
+				if (broadcast_pipefd[i][thisidx][1] > maxfd)
+					maxfd = broadcast_pipefd[i][thisidx][1];
+			}
+			else
+			{
+				std::cerr << "ERROR: file descriptor value of internal" <<
+					" pipe exceeds FD_SETSIZE" << std::endl;
+				return -201;
+			}
+			if (broadcast_self_pipefd[1] < FD_SETSIZE)
+			{
+				FD_SET(broadcast_self_pipefd[1], &wfds);
+				if (broadcast_self_pipefd[1] > maxfd)
+					maxfd = broadcast_self_pipefd[1];
 			}
 			else
 			{
@@ -1520,10 +1728,11 @@ int tcpip_io
 		for (tcpip_mci_t pi = tcpip_pipe2socket_in.begin();
 			pi != tcpip_pipe2socket_in.end(); ++pi)
 		{
-			if (FD_ISSET(pi->second, &rfds))
+			size_t max = tcpip_pipe_buffer_size - len_in[pi->first];
+			if (FD_ISSET(pi->second, &rfds) && (max > 0))
 			{
-				char buf[tcpip_pipe_buffer_size];
-				ssize_t len = read(pi->second, buf, sizeof(buf));
+				ssize_t len = read(pi->second,
+					buf_in[pi->first] + len_in[pi->first], max);
 				if (len < 0)
 				{
 					if ((errno == EWOULDBLOCK) || (errno == EINTR))
@@ -1563,65 +1772,67 @@ int tcpip_io
 						std::cerr << "INFO: received " << len << " bytes on " <<
 							"connection for P_" << pi->first << std::endl;
 					}
-					ssize_t wnum = 0;
-					do
+					len_in[pi->first] += len;
+				}
+			}
+		}
+		for (size_t i = 0; i < peers.size(); i++)
+		{
+			if (((i == thisidx) && FD_ISSET(self_pipefd[1], &wfds) && (len_in[i] > 0)) ||
+				((i != thisidx) && FD_ISSET(pipefd[i][thisidx][1], &wfds) && (len_in[i] > 0)))
+			{
+				size_t wnum = 0;
+				do
+				{
+					ssize_t num = 0;
+					if (i == thisidx)
 					{
-						ssize_t num = 0;
-						if (pi->first == thisidx)
-						{
-							num = write(self_pipefd[1],
-								buf + wnum, len - wnum);
-						}
-						else
-						{
-							num = write(pipefd[pi->first][thisidx][1],
-								buf + wnum, len - wnum);
-						}
-						if (num < 0)
-						{
-							if ((errno == EWOULDBLOCK) || (errno == EINTR))
-							{
-								if (opt_verbose)
-								{
-									std::cerr << "INFO: sleeping for write" <<
-										" into pipe ..." << std::endl;
-								}
-								sleep(1);
-								continue;
-							}
-							else if (errno == EAGAIN)
-							{
-								perror("WARNING: tcpip_io (write)");
-								if (opt_verbose)
-								{
-									std::cerr << "INFO: sleeping for write" <<
-										" into pipe ..." << std::endl;
-								}
-								sleep(1);
-								continue;
-							}
-							else
-							{
-								perror("ERROR: tcpip_io (write)");
-								std::cerr << "DEBUG: pipefd[" << pi->first <<
-									"][" << thisidx << "]" << std::endl;
-								return -204;
-							}
-						}
-						else
-							wnum += num;
+						num = write(self_pipefd[1],
+							buf_in[i] + wnum, len_in[i] - wnum);
 					}
-					while (wnum < len);
+					else
+					{
+						num = write(pipefd[i][thisidx][1],
+							buf_in[i] + wnum, len_in[i] - wnum);
+					}
+					if (num < 0)
+					{
+						if ((errno == EWOULDBLOCK) || (errno == EINTR))
+						{
+							break;
+						}
+						else if (errno == EAGAIN)
+						{
+							perror("WARNING: tcpip_io (write)");
+							break;
+						}
+						else
+						{
+							perror("ERROR: tcpip_io (write)");
+							std::cerr << "DEBUG: pipefd[" << i <<
+								"][" << thisidx << "]" << std::endl;
+							return -204;
+						}
+					}
+					else
+						wnum += num;
+				}
+				while (wnum < len_in[i]);
+				if (wnum > 0)
+				{
+					len_in[i] -= wnum;
+					memmove(buf_in[i], buf_in[i] + wnum, len_in[i]);
 				}
 			}
 		}
 		for (tcpip_mci_t pi = tcpip_broadcast_pipe2socket_in.begin();
 			pi != tcpip_broadcast_pipe2socket_in.end(); ++pi)
 		{
-			if (FD_ISSET(pi->second, &rfds))
+			size_t max = tcpip_pipe_buffer_size - broadcast_len_in[pi->first];
+			if (FD_ISSET(pi->second, &rfds) && (max > 0))
 			{
-				char buf[tcpip_pipe_buffer_size];
-				ssize_t len = read(pi->second, buf, sizeof(buf));
+				ssize_t len = read(pi->second,
+					broadcast_buf_in[pi->first] + broadcast_len_in[pi->first], max);
 				if (len < 0)
 				{
 					if ((errno == EWOULDBLOCK) || (errno == EINTR))
@@ -1641,8 +1852,8 @@ int tcpip_io
 				}
 				else if (len == 0)
 				{
-					std::cerr << "WARNING: broadcast connection collapsed" <<
-						" for P_" << pi->first << std::endl;
+					std::cerr << "WARNING: broadcast connection collapsed for" <<
+						" P_" << pi->first << std::endl;
 					if (close(tcpip_broadcast_pipe2socket_in[pi->first]) < 0)
 						perror("WARNING: tcpip_io (close)");
 					tcpip_broadcast_pipe2socket_in[pi->first] = 0;
@@ -1658,69 +1869,65 @@ int tcpip_io
 				{
 					if (opt_verbose > 2)
 					{
-						std::cerr << "INFO: received " << len << " bytes on" <<
-							" broadcast connection for P_" <<
-							pi->first << std::endl;
+						std::cerr << "INFO: received " << len << " bytes on " <<
+							"broadcast connection for P_" << pi->first << std::endl;
 					}
-					ssize_t wnum = 0;
-					do
-					{
-						ssize_t num = 0;
-						if (pi->first == thisidx)
-						{
-							num = write(broadcast_self_pipefd[1],
-								buf + wnum, len - wnum);
-						}				
-						else
-						{
-							num = write(broadcast_pipefd[pi->first][thisidx][1],
-								buf + wnum, len - wnum);
-						}
-						if (num < 0)
-						{
-							if ((errno == EWOULDBLOCK) || (errno == EINTR))
-							{
-								if (opt_verbose)
-								{
-									std::cerr << "INFO: sleeping for write" <<
-										" into pipe ..." << std::endl;
-								}
-								sleep(1);
-								continue;
-							}
-							else if (errno == EAGAIN)
-							{
-								perror("WARNING: tcpip_io (write)");
-								if (opt_verbose)
-								{
-									std::cerr << "INFO: sleeping for write" <<
-										" into pipe ..." << std::endl;
-								}
-								sleep(1);
-								continue;
-							}
-							else
-							{
-								perror("ERROR: tcpip_io (write)");
-								std::cerr << "DEBUG: broadcast_pipefd[" <<
-									pi->first << "][" << thisidx << "]" <<
-									std::endl;
-								return -204;
-							}
-						}
-						else
-							wnum += num;
-					}
-					while (wnum < len);
+					broadcast_len_in[pi->first] += len;
 				}
 			}
 		}
 		for (size_t i = 0; i < peers.size(); i++)
 		{
-			if (FD_ISSET(pipefd[thisidx][i][0], &rfds))
+			if (((i == thisidx) && FD_ISSET(broadcast_self_pipefd[1], &wfds) && (broadcast_len_in[i] > 0)) ||
+				((i != thisidx) && FD_ISSET(broadcast_pipefd[i][thisidx][1], &wfds) && (broadcast_len_in[i] > 0)))
 			{
-				char buf[tcpip_pipe_buffer_size];
-				ssize_t len = read(pipefd[thisidx][i][0], buf, sizeof(buf));
+				size_t wnum = 0;
+				do
+				{
+					ssize_t num = 0;
+					if (i == thisidx)
+					{
+						num = write(broadcast_self_pipefd[1],
+							broadcast_buf_in[i] + wnum, broadcast_len_in[i] - wnum);
+					}
+					else
+					{
+						num = write(broadcast_pipefd[i][thisidx][1],
+							broadcast_buf_in[i] + wnum, broadcast_len_in[i] - wnum);
+					}
+					if (num < 0)
+					{
+						if ((errno == EWOULDBLOCK) || (errno == EINTR))
+						{
+							break;
+						}
+						else if (errno == EAGAIN)
+						{
+							perror("WARNING: tcpip_io (write)");
+							break;
+						}
+						else
+						{
+							perror("ERROR: tcpip_io (write)");
+							std::cerr << "DEBUG: broadcast_pipefd[" << i <<
+								"][" << thisidx << "]" << std::endl;
+							return -204;
+						}
+					}
+					else
+						wnum += num;
+				}
+				while (wnum < broadcast_len_in[i]);
+				broadcast_len_in[i] -= wnum;
+			}
+		}
+		for (size_t i = 0; i < peers.size(); i++)
+		{
+			size_t max = tcpip_pipe_buffer_size - len_out[i];
+			if (FD_ISSET(pipefd[thisidx][i][0], &rfds) && (max > 0))
+			{
+				ssize_t len = read(pipefd[thisidx][i][0],
+					buf_out[i] + len_out[i], max);
 				if (len < 0)
 				{
 					if ((errno == EWOULDBLOCK) || (errno == EINTR))
@@ -1745,66 +1952,7 @@ int tcpip_io
 				}
 				else if (tcpip_pipe2socket_out.count(i))
 				{
-					if (opt_verbose > 2)
-					{
-						std::cerr << "INFO: sending " << len << " bytes on" <<
-							" connection to P_" << i << std::endl;
-					}
-					ssize_t wnum = 0;
-					do
-					{
-						ssize_t num = write(tcpip_pipe2socket_out[i],
-							buf + wnum, len - wnum);
-						if (num < 0)
-						{
-							if ((errno == EWOULDBLOCK) || (errno == EINTR))
-							{
-								if (opt_verbose)
-								{
-									std::cerr << "INFO: sleeping for write" <<
-										" into socket ..." << std::endl;
-								}
-								sleep(1);
-								continue;
-							}
-							else if (errno == EAGAIN)
-							{
-								perror("WARNING: tcpip_io (write)");
-								if (opt_verbose)
-								{
-									std::cerr << "INFO: sleeping for write" <<
-										" into socket ..." << std::endl;
-								}
-								sleep(1);
-								continue;
-							}
-							else if ((errno == ECONNRESET) || (errno == EPIPE))
-							{
-								std::cerr << "WARNING: connection collapsed" <<
-									" for P_" << i << std::endl;
-								if (close(tcpip_pipe2socket_out[i]) < 0)
-									perror("WARNING: tcpip_io (close)");
-								tcpip_pipe2socket_out.erase(i);
-								if (tcpip_reconnect(i, false))
-								{
-									std::cerr << "INFO: reconnect successful" <<
-										std::endl;
-									continue;
-								}
-								break;
-							}
-							else
-							{
-								perror("ERROR: tcpip_io (write)");
-								std::cerr << "DEBUG: tcpip_pipe2socket_out[" <<
-									i << "]" << std::endl;
-								return -204;
-							}
-						}
-						else
-							wnum += num;
-					}
-					while (wnum < len);
+					len_out[i] += len;
 				}
 				else
 				{
@@ -1815,11 +1963,11 @@ int tcpip_io
 					}
 				}
 			}
+			max = tcpip_pipe_buffer_size - broadcast_len_out[i];
 			if (FD_ISSET(broadcast_pipefd[thisidx][i][0], &rfds))
 			{
-				char buf[tcpip_pipe_buffer_size];
-				ssize_t len = read(broadcast_pipefd[thisidx][i][0], buf,
-					sizeof(buf));
+				ssize_t len = read(broadcast_pipefd[thisidx][i][0],
+					broadcast_buf_out[i] + broadcast_len_out[i], max);
 				if (len < 0)
 				{
 					if ((errno == EWOULDBLOCK) || (errno == EINTR))
@@ -1843,67 +1991,7 @@ int tcpip_io
 				}
 				else if (tcpip_broadcast_pipe2socket_out.count(i))
 				{
-					if (opt_verbose > 2)
-					{
-						std::cerr << "INFO: sending " << len << " bytes on" <<
-							" broadcast connection to P_" << i <<
-							std::endl;
-					}
-					ssize_t wnum = 0;
-					do
-					{
-						ssize_t num = write(tcpip_broadcast_pipe2socket_out[i],
-							buf + wnum, len - wnum);
-						if (num < 0)
-						{
-							if ((errno == EWOULDBLOCK) || (errno == EINTR))
-							{
-								if (opt_verbose)
-								{
-									std::cerr << "INFO: sleeping for write" <<
-										" into socket ..." << std::endl;
-								}
-								sleep(1);
-								continue;
-							}
-							else if (errno == EAGAIN)
-							{
-								perror("WARNING: tcpip_io (write)");
-								if (opt_verbose)
-								{
-									std::cerr << "INFO: sleeping for write" <<
-										" into socket ..." << std::endl;
-								}
-								sleep(1);
-								continue;
-							}
-							else if ((errno == ECONNRESET) || (errno == EPIPE))
-							{
-								std::cerr << "WARNING: broadcast connection" <<
-									" collapsed for P_" << i << std::endl;
-								if (close(tcpip_broadcast_pipe2socket_out[i]) < 0)
-									perror("WARNING: tcpip_io (close)");
-								tcpip_broadcast_pipe2socket_out.erase(i);
-								if (tcpip_reconnect(i, true))
-								{
-									std::cerr << "INFO: reconnect successful" <<
-										std::endl;
-									continue;
-								}
-								break;
-							}
-							else
-							{
-								perror("ERROR: tcpip_io (write)");
-								std::cerr << "DEBUG: tcpip_broadcast_pipe2" <<
-									"socket_out[" << i << "]" << std::endl;
-								return -204;
-							}
-						}
-						else
-							wnum += num;
-					}
-					while (wnum < len);
+					broadcast_len_out[i] += len;
 				}
 				else
 				{
@@ -1915,6 +2003,126 @@ int tcpip_io
 				}
 			}
 		}
+		for (size_t i = 0; i < peers.size(); i++)
+		{
+			if (tcpip_pipe2socket_out.count(i) == 0)
+				continue;
+			if (FD_ISSET(tcpip_pipe2socket_out[i], &wfds) && (len_out[i] > 0))
+			{
+				if (opt_verbose > 2)
+				{
+					std::cerr << "INFO: sending " << len_out[i] << " bytes on" <<
+						" connection to P_" << i << std::endl;
+				}
+				size_t wnum = 0;
+				do
+				{
+					ssize_t num = write(tcpip_pipe2socket_out[i],
+						buf_out[i] + wnum, len_out[i] - wnum);
+					if (num < 0)
+					{
+						if ((errno == EWOULDBLOCK) || (errno == EINTR))
+						{
+							break;
+						}
+						else if (errno == EAGAIN)
+						{
+							perror("WARNING: tcpip_io (write)");
+							break;
+						}
+						else if ((errno == ECONNRESET) || (errno == EPIPE))
+						{
+							std::cerr << "WARNING: connection collapsed" <<
+								" for P_" << i << std::endl;
+							if (close(tcpip_pipe2socket_out[i]) < 0)
+								perror("WARNING: tcpip_io (close)");
+							tcpip_pipe2socket_out.erase(i);
+							if (tcpip_reconnect(i, false))
+							{
+								std::cerr << "INFO: reconnect successful" <<
+									std::endl;
+								continue;
+							}
+							break;
+						}
+						else
+						{
+							perror("ERROR: tcpip_io (write)");
+							std::cerr << "DEBUG: tcpip_pipe2socket_out[" <<
+								i << "]" << std::endl;
+							return -204;
+						}
+					}
+					else
+						wnum += num;
+				}
+				while (wnum < broadcast_len_out[i]);
+				if (wnum > 0)
+				{
+					len_out[i] -= wnum;
+					memmove(buf_out[i], buf_out[i] + wnum, len_out[i]);
+				}
+			}
+			if (tcpip_broadcast_pipe2socket_out.count(i) == 0)
+				continue;
+			if (FD_ISSET(tcpip_broadcast_pipe2socket_out[i], &wfds) && (broadcast_len_out[i] > 0))
+			{
+				if (opt_verbose > 2)
+				{
+					std::cerr << "INFO: sending " << broadcast_len_out[i] << " bytes on" <<
+						" broadcast connection to P_" << i << std::endl;
+				}
+				size_t wnum = 0;
+				do
+				{
+					ssize_t num = write(tcpip_broadcast_pipe2socket_out[i],
+						broadcast_buf_out[i] + wnum, broadcast_len_out[i] - wnum);
+					if (num < 0)
+					{
+						if ((errno == EWOULDBLOCK) || (errno == EINTR))
+						{
+							break;
+						}
+						else if (errno == EAGAIN)
+						{
+							perror("WARNING: tcpip_io (write)");
+							break;
+						}
+						else if ((errno == ECONNRESET) || (errno == EPIPE))
+						{
+							std::cerr << "WARNING: broadcast connection" <<
+								" collapsed for P_" << i << std::endl;
+							if (close(tcpip_broadcast_pipe2socket_out[i]) < 0)
+								perror("WARNING: tcpip_io (close)");
+							tcpip_broadcast_pipe2socket_out.erase(i);
+							if (tcpip_reconnect(i, true))
+							{
+								std::cerr << "INFO: reconnect successful" <<
+									std::endl;
+								continue;
+							}
+							break;
+						}
+						else
+						{
+							perror("ERROR: tcpip_io (write)");
+							std::cerr << "DEBUG: tcpip_broadcast_pipe2" <<
+								"socket_out[" << i << "]" << std::endl;
+							return -204;
+						}
+					}
+					else
+						wnum += num;
+				}
+				while (wnum < broadcast_len_out[i]);
+				if (wnum > 0)
+				{
+					broadcast_len_out[i] -= wnum;
+					memmove(broadcast_buf_out[i], broadcast_buf_out[i] + wnum, broadcast_len_out[i]);
+				}
+			}
+		}
+
 		if (MHD_run_from_select(tcpip_mhd, &rfds, &wfds, NULL) != MHD_YES)
 		{
 			std::cerr << "ERROR: MHD_run_from_select() failed" << std::endl;
