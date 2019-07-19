@@ -1552,12 +1552,55 @@ int tcpip_io
 		len_out.push_back(0);
 		broadcast_len_out.push_back(0);
 	}
+	std::vector<size_t> tcpip_reconnects, tcpip_broadcast_reconnects;
 	while (!signal_caught)
 	{
 		// do some other work beside I/O
 		int ret = 0;
 		if (!tcpip_work(ret, current))
 			return ret;
+		// handle collapsed connections
+		size_t num_reconnects = tcpip_reconnects.size();
+		if (num_reconnects > 0)
+		{
+			size_t idx = 0;
+			if (num_reconnects > 1)
+				idx = tmcg_mpz_wrandom_ui() % num_reconnects;
+			size_t who = tcpip_reconnects[idx];
+			if (tcpip_reconnect(who, false))
+			{
+				if (opt_verbose)
+				{
+					std::cerr << "INFO: reconnect to P_" << who << " was" <<
+						" successful" << std::endl;
+				}
+				std::vector<size_t>::iterator it = std::find(
+					tcpip_reconnects.begin(), tcpip_reconnects.end(), who);
+				if (it != tcpip_reconnects.end())
+					tcpip_reconnects.erase(it);
+			}
+		}
+		size_t num_broadcast_reconnects = tcpip_broadcast_reconnects.size();
+		if (num_broadcast_reconnects > 0)
+		{
+			size_t idx = 0;
+			if (num_broadcast_reconnects > 1)
+				idx = tmcg_mpz_wrandom_ui() % num_broadcast_reconnects;
+			size_t who = tcpip_broadcast_reconnects[idx];
+			if (tcpip_reconnect(who, true))
+			{
+				if (opt_verbose)
+				{
+					std::cerr << "INFO: reconnect to P_" << who << " was" <<
+						" successful (broadcast channel)" << std::endl;
+				}
+				std::vector<size_t>::iterator it = std::find(
+					tcpip_broadcast_reconnects.begin(),
+					tcpip_broadcast_reconnects.end(), who);
+				if (it != tcpip_broadcast_reconnects.end())
+					tcpip_broadcast_reconnects.erase(it);
+			}
+		}
 		// do buffered I/O for DOTS and MHD
 		fd_set rfds, wfds;
 		MHD_socket maxfd = 0;
@@ -2049,12 +2092,7 @@ int tcpip_io
 							if (close(tcpip_pipe2socket_out[i]) < 0)
 								perror("WARNING: tcpip_io (close)");
 							tcpip_pipe2socket_out.erase(i);
-							if (tcpip_reconnect(i, false))
-							{
-								std::cerr << "INFO: reconnect successful" <<
-									std::endl;
-								continue;
-							}
+							tcpip_reconnects.push_back(i);
 							break;
 						}
 						else
@@ -2110,12 +2148,7 @@ int tcpip_io
 							if (close(tcpip_broadcast_pipe2socket_out[i]) < 0)
 								perror("WARNING: tcpip_io (close)");
 							tcpip_broadcast_pipe2socket_out.erase(i);
-							if (tcpip_reconnect(i, true))
-							{
-								std::cerr << "INFO: reconnect successful" <<
-									std::endl;
-								continue;
-							}
+							tcpip_broadcast_reconnects.push_back(i);
 							break;
 						}
 						else
@@ -2138,7 +2171,6 @@ int tcpip_io
 				}
 			}
 		}
-
 		if (MHD_run_from_select(tcpip_mhd, &rfds, &wfds, NULL) != MHD_YES)
 		{
 			std::cerr << "ERROR: MHD_run_from_select() failed" << std::endl;
