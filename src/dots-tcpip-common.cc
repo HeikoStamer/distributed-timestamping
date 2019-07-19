@@ -1231,8 +1231,8 @@ bool tcpip_reaccept
 	if (broadcast)
 	{
 		if (tcpip_broadcast_pipe2socket_in.count(peer) == 0)
-			tcpip_broadcast_pipe2socket_in[peer] = 0;
-		if (tcpip_broadcast_pipe2socket_in[peer] == 0)
+			tcpip_broadcast_pipe2socket_in[peer] = -42;
+		if (tcpip_broadcast_pipe2socket_in[peer] == -42)
 			good = true;
 		if (!good)
 		{
@@ -1243,8 +1243,8 @@ bool tcpip_reaccept
 	else
 	{
 		if (tcpip_pipe2socket_in.count(peer) == 0)
-			tcpip_pipe2socket_in[peer] = 0;
-		else if (tcpip_pipe2socket_in[peer] == 0)
+			tcpip_pipe2socket_in[peer] = -42;
+		else if (tcpip_pipe2socket_in[peer] == -42)
 			good = true;
 		if (!good)
 		{
@@ -1643,9 +1643,12 @@ int tcpip_io
 		{
 			if (pi->second < FD_SETSIZE)
 			{
-				FD_SET(pi->second, &wfds);
-				if (pi->second > maxfd)
-					maxfd = pi->second;
+				if (len_out[pi->first] > 0)
+				{
+					FD_SET(pi->second, &wfds);
+					if (pi->second > maxfd)
+						maxfd = pi->second;
+				}
 			}
 			else
 			{
@@ -1659,9 +1662,12 @@ int tcpip_io
 		{
 			if (pi->second < FD_SETSIZE)
 			{
-				FD_SET(pi->second, &wfds);
-				if (pi->second > maxfd)
-					maxfd = pi->second;
+				if (broadcast_len_out[pi->first] > 0)
+				{
+					FD_SET(pi->second, &wfds);
+					if (pi->second > maxfd)
+						maxfd = pi->second;
+				}
 			}
 			else
 			{
@@ -1686,9 +1692,12 @@ int tcpip_io
 			}
 			if (pipefd[i][thisidx][1] < FD_SETSIZE)
 			{
-				FD_SET(pipefd[i][thisidx][1], &wfds);
-				if (pipefd[i][thisidx][1] > maxfd)
-					maxfd = pipefd[i][thisidx][1];
+				if (len_in[i] > 0)
+				{
+					FD_SET(pipefd[i][thisidx][1], &wfds);
+					if (pipefd[i][thisidx][1] > maxfd)
+						maxfd = pipefd[i][thisidx][1];
+				}
 			}
 			else
 			{
@@ -1696,18 +1705,7 @@ int tcpip_io
 					" pipe exceeds FD_SETSIZE" << std::endl;
 				return -201;
 			}
-			if (self_pipefd[1] < FD_SETSIZE)
-			{
-				FD_SET(self_pipefd[1], &wfds);
-				if (self_pipefd[1] > maxfd)
-					maxfd = self_pipefd[1];
-			}
-			else
-			{
-				std::cerr << "ERROR: file descriptor value of internal" <<
-					" pipe exceeds FD_SETSIZE" << std::endl;
-				return -201;
-			}
+
 			if (broadcast_pipefd[thisidx][i][0] < FD_SETSIZE)
 			{
 				FD_SET(broadcast_pipefd[thisidx][i][0], &rfds);
@@ -1722,9 +1720,12 @@ int tcpip_io
 			}
 			if (broadcast_pipefd[i][thisidx][1] < FD_SETSIZE)
 			{
-				FD_SET(broadcast_pipefd[i][thisidx][1], &wfds);
-				if (broadcast_pipefd[i][thisidx][1] > maxfd)
-					maxfd = broadcast_pipefd[i][thisidx][1];
+				if (broadcast_len_in[i] > 0)
+				{
+					FD_SET(broadcast_pipefd[i][thisidx][1], &wfds);
+					if (broadcast_pipefd[i][thisidx][1] > maxfd)
+						maxfd = broadcast_pipefd[i][thisidx][1];
+				}
 			}
 			else
 			{
@@ -1732,18 +1733,36 @@ int tcpip_io
 					" pipe exceeds FD_SETSIZE" << std::endl;
 				return -201;
 			}
-			if (broadcast_self_pipefd[1] < FD_SETSIZE)
+		}
+		if (self_pipefd[1] < FD_SETSIZE)
+		{
+			if (len_in[thisidx] > 0)
+			{
+				FD_SET(self_pipefd[1], &wfds);
+				if (self_pipefd[1] > maxfd)
+					maxfd = self_pipefd[1];
+			}
+		}
+		else
+		{
+			std::cerr << "ERROR: file descriptor value of internal" <<
+				" pipe exceeds FD_SETSIZE" << std::endl;
+			return -201;
+		}
+		if (broadcast_self_pipefd[1] < FD_SETSIZE)
+		{
+			if (broadcast_len_in[thisidx] > 0)
 			{
 				FD_SET(broadcast_self_pipefd[1], &wfds);
 				if (broadcast_self_pipefd[1] > maxfd)
 					maxfd = broadcast_self_pipefd[1];
 			}
-			else
-			{
-				std::cerr << "ERROR: file descriptor value of internal" <<
-					" pipe exceeds FD_SETSIZE" << std::endl;
-				return -201;
-			}
+		}
+		else
+		{
+			std::cerr << "ERROR: file descriptor value of internal" <<
+				" pipe exceeds FD_SETSIZE" << std::endl;
+			return -201;
 		}
 		if (MHD_get_fdset(tcpip_mhd, &rfds, &wfds, NULL, &maxfd) != MHD_YES)
 		{
@@ -1801,7 +1820,7 @@ int tcpip_io
 						" P_" << pi->first << std::endl;
 					if (close(tcpip_pipe2socket_in[pi->first]) < 0)
 						perror("WARNING: tcpip_io (close)");
-					tcpip_pipe2socket_in[pi->first] = 0;
+					tcpip_pipe2socket_in[pi->first] = -42;
 					if (tcpip_reaccept(pi->first, false))
 					{
 						std::cerr << "INFO: reaccept successful" << std::endl;
@@ -1905,7 +1924,7 @@ int tcpip_io
 						" P_" << pi->first << std::endl;
 					if (close(tcpip_broadcast_pipe2socket_in[pi->first]) < 0)
 						perror("WARNING: tcpip_io (close)");
-					tcpip_broadcast_pipe2socket_in[pi->first] = 0;
+					tcpip_broadcast_pipe2socket_in[pi->first] = -42;
 					if (tcpip_reaccept(pi->first, true))
 					{
 						std::cerr << "INFO: reaccept successful" << std::endl;
