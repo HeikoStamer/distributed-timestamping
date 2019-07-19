@@ -963,7 +963,7 @@ size_t tcpip_connect
 bool tcpip_reconnect
 	(const size_t peer, const bool broadcast)
 {
-	if (opt_verbose > 2)
+	if (opt_verbose > 1)
 	{
 		std::cerr << "INFO: tcpip_reconnect(" << peer << ", " <<
 			(broadcast ? "true" : "false") << ") called" << std::endl;
@@ -1222,7 +1222,7 @@ void tcpip_accept
 bool tcpip_reaccept
 	(const size_t peer, const bool broadcast)
 {
-	if (opt_verbose > 2)
+	if (opt_verbose > 1)
 	{
 		std::cerr << "INFO: tcpip_reaccept(" << peer << ", " <<
 			(broadcast ? "true" : "false") << ") called" << std::endl;
@@ -1295,7 +1295,8 @@ bool tcpip_reaccept
 			struct sockaddr_storage sin;
 			socklen_t slen = (socklen_t)sizeof(sin);
 			memset(&sin, 0, sizeof(sin));
-			int connfd = accept(tcpip_pipe2socket[peer], (struct sockaddr*)&sin, &slen);
+			int connfd = accept(tcpip_pipe2socket[peer],
+				(struct sockaddr*)&sin, &slen);
 			if (connfd < 0)
 			{
 				perror("ERROR: tcpip_reaccept (accept)");
@@ -1327,7 +1328,8 @@ bool tcpip_reaccept
 			struct sockaddr_storage sin;
 			socklen_t slen = (socklen_t)sizeof(sin);
 			memset(&sin, 0, sizeof(sin));
-			int connfd = accept(tcpip_broadcast_pipe2socket[peer], (struct sockaddr*)&sin, &slen);
+			int connfd = accept(tcpip_broadcast_pipe2socket[peer],
+				(struct sockaddr*)&sin, &slen);
 			if (connfd < 0)
 			{
 				perror("ERROR: tcpip_reaccept (accept)");
@@ -1778,8 +1780,10 @@ int tcpip_io
 		}
 		for (size_t i = 0; i < peers.size(); i++)
 		{
-			if (((i == thisidx) && FD_ISSET(self_pipefd[1], &wfds) && (len_in[i] > 0)) ||
-				((i != thisidx) && FD_ISSET(pipefd[i][thisidx][1], &wfds) && (len_in[i] > 0)))
+			if (((i == thisidx) && FD_ISSET(self_pipefd[1], &wfds) &&
+				(len_in[i] > 0)) ||
+				((i != thisidx) && FD_ISSET(pipefd[i][thisidx][1], &wfds) &&
+				(len_in[i] > 0)))
 			{
 				size_t wnum = 0;
 				do
@@ -1788,12 +1792,14 @@ int tcpip_io
 					if (i == thisidx)
 					{
 						num = write(self_pipefd[1],
-							buf_in[i] + wnum, len_in[i] - wnum);
+							buf_in[i] + wnum,
+							len_in[i] - wnum);
 					}
 					else
 					{
 						num = write(pipefd[i][thisidx][1],
-							buf_in[i] + wnum, len_in[i] - wnum);
+							buf_in[i] + wnum,
+							len_in[i] - wnum);
 					}
 					if (num < 0)
 					{
@@ -1831,8 +1837,8 @@ int tcpip_io
 			size_t max = tcpip_pipe_buffer_size - broadcast_len_in[pi->first];
 			if (FD_ISSET(pi->second, &rfds) && (max > 0))
 			{
-				ssize_t len = read(pi->second,
-					broadcast_buf_in[pi->first] + broadcast_len_in[pi->first], max);
+				ssize_t len = read(pi->second, broadcast_buf_in[pi->first] +
+					broadcast_len_in[pi->first], max);
 				if (len < 0)
 				{
 					if ((errno == EWOULDBLOCK) || (errno == EINTR))
@@ -1870,7 +1876,8 @@ int tcpip_io
 					if (opt_verbose > 2)
 					{
 						std::cerr << "INFO: received " << len << " bytes on " <<
-							"broadcast connection for P_" << pi->first << std::endl;
+							"broadcast connection for P_" << pi->first <<
+							std::endl;
 					}
 					broadcast_len_in[pi->first] += len;
 				}
@@ -1878,8 +1885,10 @@ int tcpip_io
 		}
 		for (size_t i = 0; i < peers.size(); i++)
 		{
-			if (((i == thisidx) && FD_ISSET(broadcast_self_pipefd[1], &wfds) && (broadcast_len_in[i] > 0)) ||
-				((i != thisidx) && FD_ISSET(broadcast_pipefd[i][thisidx][1], &wfds) && (broadcast_len_in[i] > 0)))
+			if (((i == thisidx) && FD_ISSET(broadcast_self_pipefd[1], &wfds) &&
+				(broadcast_len_in[i] > 0)) ||
+				((i != thisidx) && FD_ISSET(broadcast_pipefd[i][thisidx][1],
+					&wfds) && (broadcast_len_in[i] > 0)))
 			{
 				size_t wnum = 0;
 				do
@@ -1888,12 +1897,14 @@ int tcpip_io
 					if (i == thisidx)
 					{
 						num = write(broadcast_self_pipefd[1],
-							broadcast_buf_in[i] + wnum, broadcast_len_in[i] - wnum);
+							broadcast_buf_in[i] + wnum,
+							broadcast_len_in[i] - wnum);
 					}
 					else
 					{
 						num = write(broadcast_pipefd[i][thisidx][1],
-							broadcast_buf_in[i] + wnum, broadcast_len_in[i] - wnum);
+							broadcast_buf_in[i] + wnum,
+							broadcast_len_in[i] - wnum);
 					}
 					if (num < 0)
 					{
@@ -2011,14 +2022,15 @@ int tcpip_io
 			{
 				if (opt_verbose > 2)
 				{
-					std::cerr << "INFO: sending " << len_out[i] << " bytes on" <<
-						" connection to P_" << i << std::endl;
+					std::cerr << "INFO: sending " << len_out[i] << " bytes" <<
+						" on connection to P_" << i << std::endl;
 				}
 				size_t wnum = 0;
 				do
 				{
 					ssize_t num = write(tcpip_pipe2socket_out[i],
-						buf_out[i] + wnum, len_out[i] - wnum);
+						buf_out[i] + wnum,
+						len_out[i] - wnum);
 					if (num < 0)
 					{
 						if ((errno == EWOULDBLOCK) || (errno == EINTR))
@@ -2065,18 +2077,21 @@ int tcpip_io
 			}
 			if (tcpip_broadcast_pipe2socket_out.count(i) == 0)
 				continue;
-			if (FD_ISSET(tcpip_broadcast_pipe2socket_out[i], &wfds) && (broadcast_len_out[i] > 0))
+			if (FD_ISSET(tcpip_broadcast_pipe2socket_out[i], &wfds) &&
+				(broadcast_len_out[i] > 0))
 			{
 				if (opt_verbose > 2)
 				{
-					std::cerr << "INFO: sending " << broadcast_len_out[i] << " bytes on" <<
-						" broadcast connection to P_" << i << std::endl;
+					std::cerr << "INFO: sending " << broadcast_len_out[i] <<
+						" bytes on broadcast connection to P_" << i <<
+						std::endl;
 				}
 				size_t wnum = 0;
 				do
 				{
 					ssize_t num = write(tcpip_broadcast_pipe2socket_out[i],
-						broadcast_buf_out[i] + wnum, broadcast_len_out[i] - wnum);
+						broadcast_buf_out[i] + wnum,
+						broadcast_len_out[i] - wnum);
 					if (num < 0)
 					{
 						if ((errno == EWOULDBLOCK) || (errno == EINTR))
@@ -2118,7 +2133,8 @@ int tcpip_io
 				if (wnum > 0)
 				{
 					broadcast_len_out[i] -= wnum;
-					memmove(broadcast_buf_out[i], broadcast_buf_out[i] + wnum, broadcast_len_out[i]);
+					memmove(broadcast_buf_out[i], broadcast_buf_out[i] + wnum,
+						broadcast_len_out[i]);
 				}
 			}
 		}
