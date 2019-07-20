@@ -128,10 +128,25 @@ static RETSIGTYPE tcpip_sig_handler_quit
 	}
 	else
 	{
-		if (opt_verbose)
+		pid_t child_pid = pid[tcpip_peer2pipe[tcpip_thispeer]];
+		if (child_pid == 424242)
 		{
-			std::cerr << "tcpip_sig_handler_quit(): child got signal " <<
-				sig << std::endl;
+			if (opt_verbose)
+			{
+				std::cerr << "tcpip_sig_handler_quit(): parent got signal " <<
+					sig << std::endl;
+			}
+			tcpip_close();
+			tcpip_done();
+			exit(-1);
+		}
+		else
+		{
+			if (opt_verbose)
+			{
+				std::cerr << "tcpip_sig_handler_quit(): child got signal " <<
+					sig << std::endl;
+			}
 		}
 	}
 }
@@ -635,6 +650,7 @@ void tcpip_init
 		tcpip_peer2pipe[peers[i]] = i;
 		tcpip_pipe2peer[i] = peers[i];
 	}
+	pid[tcpip_peer2pipe[tcpip_thispeer]] = 424242; // indicator init state
 	// initialize random S/N seed
 	tmcg_openpgp_byte_t rand[32];
 	gcry_randomize(rand, sizeof(rand), GCRY_STRONG_RANDOM);
