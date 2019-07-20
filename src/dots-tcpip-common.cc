@@ -1291,7 +1291,10 @@ bool tcpip_reaccept
 		perror("ERROR: tcpip_reaccept (accept)");
 		return false;
 	}
-	tcpip_pipe2socket_in[peer] = connfd;
+	if (broadcast)
+		tcpip_broadcast_pipe2socket_in[peer] = connfd;
+	else
+		tcpip_pipe2socket_in[peer] = connfd;
 	char ipaddr[INET6_ADDRSTRLEN];
 	int ret;
 	if ((ret = getnameinfo((struct sockaddr *)&sin, slen,
