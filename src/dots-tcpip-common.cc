@@ -1593,10 +1593,10 @@ int tcpip_io
 		len_out.push_back(0);
 		broadcast_len_out.push_back(0);
 	}
-	std::vector<size_t> tcpip_reconnects;
-	std::map<size_t, time_t> tcpip_reconnects_ttl;
-	std::vector<size_t> tcpip_broadcast_reconnects;
-	std::map<size_t, time_t> tcpip_broadcast_reconnects_ttl;
+	std::vector<size_t> reconnects, reaccepts;
+	std::map<size_t, time_t> reconnects_ttl, reaccepts_ttl;
+	std::vector<size_t> broadcast_reconnects, broadcast_reaccepts;
+	std::map<size_t, time_t> broadcast_reconnects_ttl, broadcast_reaccepts_ttl;
 	while (!signal_caught)
 	{
 		// do some other work beside I/O
@@ -1604,14 +1604,14 @@ int tcpip_io
 		if (!tcpip_work(ret, current))
 			return ret;
 		// handle collapsed connections
-		size_t num_reconnects = tcpip_reconnects.size();
+		size_t num_reconnects = reconnects.size();
 		if (num_reconnects > 0)
 		{
 			size_t idx = 0;
 			if (num_reconnects > 1)
 				idx = tmcg_mpz_wrandom_ui() % num_reconnects;
-			size_t who = tcpip_reconnects[idx];
-			time_t ttl = tcpip_reconnects_ttl[who];
+			size_t who = reconnects[idx];
+			time_t ttl = reconnects_ttl[who];
 			if (time(NULL) > (ttl + DOTS_TIME_LOOP))
 			{
 				if (tcpip_reconnect(who, false))
@@ -1622,10 +1622,10 @@ int tcpip_io
 							" was successful" << std::endl;
 					}
 					std::vector<size_t>::iterator it = std::find(
-						tcpip_reconnects.begin(), tcpip_reconnects.end(), who);
-					if (it != tcpip_reconnects.end())
-						tcpip_reconnects.erase(it);
-					tcpip_reconnects_ttl.erase(who);
+						reconnects.begin(), reconnects.end(), who);
+					if (it != reconnects.end())
+						reconnects.erase(it);
+					reconnects_ttl.erase(who);
 				}
 				else if (opt_verbose > 1)
 				{
@@ -1634,14 +1634,14 @@ int tcpip_io
 				}
 			}
 		}
-		size_t num_broadcast_reconnects = tcpip_broadcast_reconnects.size();
+		size_t num_broadcast_reconnects = broadcast_reconnects.size();
 		if (num_broadcast_reconnects > 0)
 		{
 			size_t idx = 0;
 			if (num_broadcast_reconnects > 1)
 				idx = tmcg_mpz_wrandom_ui() % num_broadcast_reconnects;
-			size_t who = tcpip_broadcast_reconnects[idx];
-			time_t ttl = tcpip_broadcast_reconnects_ttl[who];
+			size_t who = broadcast_reconnects[idx];
+			time_t ttl = broadcast_reconnects_ttl[who];
 			if (time(NULL) > (ttl + DOTS_TIME_LOOP))
 			{
 				if (tcpip_reconnect(who, true))
@@ -1652,11 +1652,11 @@ int tcpip_io
 							" was successful (broadcast channel)" << std::endl;
 					}
 					std::vector<size_t>::iterator it = std::find(
-						tcpip_broadcast_reconnects.begin(),
-						tcpip_broadcast_reconnects.end(), who);
-					if (it != tcpip_broadcast_reconnects.end())
-						tcpip_broadcast_reconnects.erase(it);
-					tcpip_broadcast_reconnects_ttl.erase(who);
+						broadcast_reconnects.begin(),
+						broadcast_reconnects.end(), who);
+					if (it != broadcast_reconnects.end())
+						broadcast_reconnects.erase(it);
+					broadcast_reconnects_ttl.erase(who);
 				}
 				else if (opt_verbose > 1)
 				{
@@ -1882,9 +1882,9 @@ int tcpip_io
 				{
 					std::cerr << "WARNING: connection collapsed for" <<
 						" P_" << pi->first << std::endl;
-					if (close(tcpip_pipe2socket_in[pi->first]) < 0)
+					if (close(pi->second) < 0)
 						perror("WARNING: tcpip_io (close)");
-					tcpip_pipe2socket_in[pi->first] = -42;
+					tcpip_pipe2socket_in[pi->first] = -42; // FIXME: move out of loop
 					if (tcpip_reaccept(pi->first, false))
 					{
 						if (opt_verbose > 1)
@@ -1995,9 +1995,9 @@ int tcpip_io
 				{
 					std::cerr << "WARNING: broadcast connection collapsed for" <<
 						" P_" << pi->first << std::endl;
-					if (close(tcpip_broadcast_pipe2socket_in[pi->first]) < 0)
+					if (close(pi->second) < 0)
 						perror("WARNING: tcpip_io (close)");
-					tcpip_broadcast_pipe2socket_in[pi->first] = -42;
+					tcpip_broadcast_pipe2socket_in[pi->first] = -42; // FIXME: move out of loop
 					if (tcpip_reaccept(pi->first, true))
 					{
 						if (opt_verbose > 1)
@@ -2103,6 +2103,7 @@ int tcpip_io
 				else if (len == 0)
 				{
 					std::cerr << "ERROR: pipe to child collapsed" << std::endl;
+					signal_caught = true; // handle this as an interrupt
 					continue;
 				}
 				else if (tcpip_pipe2socket_out.count(i))
@@ -2142,6 +2143,8 @@ int tcpip_io
 				}
 				else if (len == 0)
 				{
+					std::cerr << "ERROR: pipe to child collapsed" << std::endl;
+					signal_caught = true; // handle this as an interrupt
 					continue;
 				}
 				else if (tcpip_broadcast_pipe2socket_out.count(i))
@@ -2198,8 +2201,8 @@ int tcpip_io
 							if (close(tcpip_pipe2socket_out[i]) < 0)
 								perror("WARNING: tcpip_io (close)");
 							tcpip_pipe2socket_out.erase(i);
-							tcpip_reconnects.push_back(i);
-							tcpip_reconnects_ttl[i] = time(NULL);
+							reconnects.push_back(i);
+							reconnects_ttl[i] = time(NULL);
 							break;
 						}
 						else
@@ -2260,8 +2263,8 @@ int tcpip_io
 							if (close(tcpip_broadcast_pipe2socket_out[i]) < 0)
 								perror("WARNING: tcpip_io (close)");
 							tcpip_broadcast_pipe2socket_out.erase(i);
-							tcpip_broadcast_reconnects.push_back(i);
-							tcpip_broadcast_reconnects_ttl[i] = time(NULL);
+							broadcast_reconnects.push_back(i);
+							broadcast_reconnects_ttl[i] = time(NULL);
 							break;
 						}
 						else
