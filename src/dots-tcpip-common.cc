@@ -129,7 +129,7 @@ static RETSIGTYPE tcpip_sig_handler_quit
 	else
 	{
 		pid_t child_pid = pid[tcpip_peer2pipe[tcpip_thispeer]];
-		if (child_pid == 424242)
+		if ((child_pid == 424242) || (child_pid != 0))
 		{
 			if (opt_verbose)
 			{
@@ -138,7 +138,7 @@ static RETSIGTYPE tcpip_sig_handler_quit
 			}
 			tcpip_close();
 			tcpip_done();
-			exit(-1);
+			exit(-1000);
 		}
 		else
 		{
