@@ -1880,7 +1880,6 @@ int tcpip_io
 				}
 				else if (len == 0)
 				{
-					tcpip_user_signal_caught = false;
 					std::cerr << "WARNING: connection collapsed for" <<
 						" P_" << pi->first << std::endl;
 					if (close(tcpip_pipe2socket_in[pi->first]) < 0)
@@ -1994,7 +1993,6 @@ int tcpip_io
 				}
 				else if (len == 0)
 				{
-					tcpip_user_signal_caught = false;
 					std::cerr << "WARNING: broadcast connection collapsed for" <<
 						" P_" << pi->first << std::endl;
 					if (close(tcpip_broadcast_pipe2socket_in[pi->first]) < 0)
