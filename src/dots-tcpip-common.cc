@@ -1581,6 +1581,20 @@ int tcpip_io
 		MHD_socket maxfd = 0;
 		FD_ZERO(&rfds);
 		FD_ZERO(&wfds);
+		for (size_t i = 0; i < reaccepts.size(); i++)
+		{
+			int fd = tcpip_pipe2socket[reaccepts[i]];
+			FD_SET(fd, &rfds);
+			if (fd > maxfd)
+				maxfd = fd;
+		}
+		for (size_t i = 0; i < broadcast_reaccepts.size(); i++)
+		{
+			int fd = tcpip_broadcast_pipe2socket[broadcast_reaccepts[i]];
+			FD_SET(fd, &rfds);
+			if (fd > maxfd)
+				maxfd = fd;
+		}
 		for (tcpip_mci_t pi = tcpip_pipe2socket_in.begin();
 			pi != tcpip_pipe2socket_in.end(); ++pi)
 		{
@@ -1764,6 +1778,51 @@ int tcpip_io
 		}
 		if (retval == 0)
 			continue; // timeout
+		for (size_t i = 0; i < reaccepts.size(); i++)
+		{
+			size_t who = reaccepts[i];
+			int fd = tcpip_pipe2socket[who];
+			if (FD_ISSET(fd, &rfds))
+			{
+				if (tcpip_reaccept(who, false))
+				{
+					if (opt_verbose)
+					{
+						std::cerr << "INFO: reaccept from P_" << who <<
+							" was successful" << std::endl;
+					}
+					std::vector<size_t>::iterator it = std::find(
+						reaccepts.begin(), reaccepts.end(), who);
+					if (it != reaccepts.end())
+						reaccepts.erase(it);
+					reaccepts_ttl.erase(who);
+					break;
+				}
+			}
+		}
+		for (size_t i = 0; i < broadcast_reaccepts.size(); i++)
+		{
+			size_t who = broadcast_reaccepts[i];
+			int fd = tcpip_broadcast_pipe2socket[who];
+			if (FD_ISSET(fd, &rfds))
+			{
+				if (tcpip_reaccept(who, true))
+				{
+					if (opt_verbose)
+					{
+						std::cerr << "INFO: reaccept from P_" << who <<
+							" was successful (broadcast channel)" << std::endl;
+					}
+					std::vector<size_t>::iterator it = std::find(
+						broadcast_reaccepts.begin(),
+						broadcast_reaccepts.end(), who);
+					if (it != broadcast_reaccepts.end())
+						broadcast_reaccepts.erase(it);
+					broadcast_reaccepts_ttl.erase(who);
+					break;
+				}
+			}
+		}
 		for (tcpip_mci_t pi = tcpip_pipe2socket_in.begin();
 			pi != tcpip_pipe2socket_in.end(); ++pi)
 		{
