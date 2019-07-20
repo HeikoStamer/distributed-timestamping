@@ -1268,139 +1268,50 @@ bool tcpip_reaccept
 		std::cerr << "INFO: tcpip_reaccept(" << peer << ", " <<
 			(broadcast ? "true" : "false") << ") called" << std::endl;
 	}
-	bool good = false;
+	if (broadcast && (tcpip_broadcast_pipe2socket_in.count(peer) > 0))
+		return false;
+	if (!broadcast && (tcpip_pipe2socket_in.count(peer) > 0))
+		return false;
+	struct sockaddr_storage sin;
+	socklen_t slen = (socklen_t)sizeof(sin);
+	memset(&sin, 0, sizeof(sin));
+	int connfd = 0;
 	if (broadcast)
 	{
-		if (tcpip_broadcast_pipe2socket_in.count(peer) == 0)
-			tcpip_broadcast_pipe2socket_in[peer] = -42;
-		if (tcpip_broadcast_pipe2socket_in[peer] == -42)
-			good = true;
-		if (!good)
-		{
-			tcpip_broadcast_pipe2socket_in.erase(peer);
-			return false;
-		}
+		connfd = accept(tcpip_broadcast_pipe2socket[peer],
+			(struct sockaddr*)&sin, &slen);
 	}
 	else
 	{
-		if (tcpip_pipe2socket_in.count(peer) == 0)
-			tcpip_pipe2socket_in[peer] = -42;
-		else if (tcpip_pipe2socket_in[peer] == -42)
-			good = true;
-		if (!good)
-		{
-			tcpip_pipe2socket_in.erase(peer);
-			return false;
-		}
+		connfd = accept(tcpip_pipe2socket[peer],
+			(struct sockaddr*)&sin, &slen);
 	}
-	size_t rounds = 0;
-	do
+	if (connfd < 0)
 	{
-		fd_set rfds;
-		struct timeval tv;
-		int retval, maxfd = 0;
-		FD_ZERO(&rfds);
-		if (broadcast)
-		{
-			FD_SET(tcpip_broadcast_pipe2socket[peer], &rfds);
-			if (tcpip_broadcast_pipe2socket[peer] > maxfd)
-				maxfd = tcpip_broadcast_pipe2socket[peer];
-		}
-		else
-		{
-			FD_SET(tcpip_pipe2socket[peer], &rfds);
-			if (tcpip_pipe2socket[peer] > maxfd)
-				maxfd = tcpip_pipe2socket[peer];
-		}
-		tv.tv_sec = DOTS_TIME_POLL;
-		tv.tv_usec = 0;
-		retval = select((maxfd + 1), &rfds, NULL, NULL, &tv);
-		if (retval < 0)
-		{
-			if ((errno == EAGAIN) || (errno == EINTR))
-			{
-				if (errno == EAGAIN)
-					perror("WARNING: tcpip_reaccept (select)");
-				continue;
-			}
-			else
-			{
-				perror("ERROR: tcpip_reaccept (select)");
-				return false;
-			}
-		}
-		if (retval == 0)
-			return false; // timeout
-		if (!broadcast && FD_ISSET(tcpip_pipe2socket[peer], &rfds))
-		{
-			struct sockaddr_storage sin;
-			socklen_t slen = (socklen_t)sizeof(sin);
-			memset(&sin, 0, sizeof(sin));
-			int connfd = accept(tcpip_pipe2socket[peer],
-				(struct sockaddr*)&sin, &slen);
-			if (connfd < 0)
-			{
-				perror("ERROR: tcpip_reaccept (accept)");
-				return false;
-			}
-			tcpip_pipe2socket_in[peer] = connfd;
-			char ipaddr[INET6_ADDRSTRLEN];
-			int ret;
-			if ((ret = getnameinfo((struct sockaddr *)&sin, slen,
-				ipaddr, sizeof(ipaddr), NULL, 0, NI_NUMERICHOST)) != 0)
-			{
-				std::cerr << "WARNING: resolving incoming address failed: ";
-				if (ret == EAI_SYSTEM)
-					perror("tcpip_reaccept (getnameinfo)");
-				else
-					std::cerr << gai_strerror(ret);
-				std::cerr << std::endl;
-				return true;
-			}
-			if (opt_verbose)
-			{
-				std::cerr << "INFO: accept connection for P_" <<
-					peer << " from address " << ipaddr << std::endl;
-			}
-			return true;
-		}
-		if (broadcast && FD_ISSET(tcpip_broadcast_pipe2socket[peer], &rfds))
-		{
-			struct sockaddr_storage sin;
-			socklen_t slen = (socklen_t)sizeof(sin);
-			memset(&sin, 0, sizeof(sin));
-			int connfd = accept(tcpip_broadcast_pipe2socket[peer],
-				(struct sockaddr*)&sin, &slen);
-			if (connfd < 0)
-			{
-				perror("ERROR: tcpip_reaccept (accept)");
-				return false;
-			}
-			tcpip_broadcast_pipe2socket_in[peer] = connfd;
-			char ipaddr[INET6_ADDRSTRLEN];
-			int ret;
-			if ((ret = getnameinfo((struct sockaddr *)&sin, slen,
-				ipaddr, sizeof(ipaddr), NULL, 0, NI_NUMERICHOST)) != 0)
-			{
-				std::cerr << "WARNING: resolving incoming address failed: ";
-				if (ret == EAI_SYSTEM)
-					perror("tcpip_reaccept (getnameinfo)");
-				else
-					std::cerr << gai_strerror(ret);
-				std::cerr << std::endl;
-				return true;
-			}
-			if (opt_verbose)
-			{
-				std::cerr << "INFO: accept broadcast connection for" <<
-					" P_" << peer << " from address " << 
-					ipaddr << std::endl;
-			}
-			return true;
-		}
+		perror("ERROR: tcpip_reaccept (accept)");
+		return false;
 	}
-	while (++rounds < 5);
-	return false;
+	tcpip_pipe2socket_in[peer] = connfd;
+	char ipaddr[INET6_ADDRSTRLEN];
+	int ret;
+	if ((ret = getnameinfo((struct sockaddr *)&sin, slen,
+		ipaddr, sizeof(ipaddr), NULL, 0, NI_NUMERICHOST)) != 0)
+	{
+		std::cerr << "WARNING: resolving incoming address failed: ";
+		if (ret == EAI_SYSTEM)
+			perror("tcpip_reaccept (getnameinfo)");
+		else
+			std::cerr << gai_strerror(ret);
+		std::cerr << std::endl;
+		return true;
+	}
+	if (opt_verbose)
+	{
+		std::cerr << "INFO: accept " << (broadcast ? "broadcast" : "") <<
+			" connection for P_" << peer << " from address " << ipaddr <<
+			std::endl;
+	}
+	return true;
 }
 
 bool tcpip_fork
@@ -1884,22 +1795,9 @@ int tcpip_io
 						" P_" << pi->first << std::endl;
 					if (close(pi->second) < 0)
 						perror("WARNING: tcpip_io (close)");
-					tcpip_pipe2socket_in[pi->first] = -42; // FIXME: move out of loop
-					if (tcpip_reaccept(pi->first, false))
-					{
-						if (opt_verbose > 1)
-						{
-							std::cerr << "INFO: tcpip_reaccept() successful" <<
-								std::endl;
-						}
-						continue;
-					}
-					else if (opt_verbose)
-					{
-						std::cerr << "WARNING: tcpip_reaccept() failed" <<
-							std::endl;
-					}
 					tcpip_pipe2socket_in.erase(pi->first);
+					reaccepts.push_back(pi->first);
+					reaccepts_ttl[pi->first] = time(NULL);
 					break;
 				}
 				else
@@ -1993,26 +1891,13 @@ int tcpip_io
 				}
 				else if (len == 0)
 				{
-					std::cerr << "WARNING: broadcast connection collapsed for" <<
-						" P_" << pi->first << std::endl;
+					std::cerr << "WARNING: broadcast connection collapsed" <<
+						" for P_" << pi->first << std::endl;
 					if (close(pi->second) < 0)
 						perror("WARNING: tcpip_io (close)");
-					tcpip_broadcast_pipe2socket_in[pi->first] = -42; // FIXME: move out of loop
-					if (tcpip_reaccept(pi->first, true))
-					{
-						if (opt_verbose > 1)
-						{
-							std::cerr << "INFO: tcpip_reaccept() successful" <<
-								std::endl;
-						}
-						continue;
-					}
-					else if (opt_verbose)
-					{
-						std::cerr << "WARNING: tcpip_reaccept() failed" <<
-							std::endl;
-					}
 					tcpip_broadcast_pipe2socket_in.erase(pi->first);
+					broadcast_reaccepts.push_back(pi->first);
+					broadcast_reaccepts_ttl[pi->first] = time(NULL);
 					break;
 				}
 				else
