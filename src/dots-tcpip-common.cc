@@ -170,7 +170,7 @@ static RETSIGTYPE tcpip_sig_handler_usr1
 	tcpip_user_signal_caught = true;
 	if (opt_verbose)
 	{
-		std::cerr << "tcpip_sig_handler_pipe(): got signal " << sig <<
+		std::cerr << "tcpip_sig_handler_usr1(): got signal " << sig <<
 			std::endl;
 	}
 }
@@ -748,7 +748,13 @@ void tcpip_init
 		perror("ERROR: dots-tcpip-common (sigaction)");
 		exit(-1);
 	}
+	memset(&act, 0, sizeof(act));
 	act.sa_handler = &tcpip_sig_handler_usr1;
+#ifdef SA_INTERRUPT
+	act.sa_flags = SA_INTERRUPT;
+#else
+	act.sa_flags = SA_RESTART;
+#endif
 	if (sigaction(SIGUSR1, &act, NULL) < 0)
 	{
 		perror("ERROR: dots-tcpip-common (sigaction)");
@@ -1859,7 +1865,7 @@ int tcpip_io
 						return -203;
 					}
 				}
-				else if ((len == 0) || tcpip_user_signal_caught)
+				else if (len == 0)
 				{
 					tcpip_user_signal_caught = false;
 					std::cerr << "WARNING: connection collapsed for" <<
@@ -1869,8 +1875,17 @@ int tcpip_io
 					tcpip_pipe2socket_in[pi->first] = -42;
 					if (tcpip_reaccept(pi->first, false))
 					{
-						std::cerr << "INFO: reaccept successful" << std::endl;
+						if (opt_verbose > 1)
+						{
+							std::cerr << "INFO: tcpip_reaccept() successful" <<
+								std::endl;
+						}
 						continue;
+					}
+					else if (opt_verbose)
+					{
+						std::cerr << "WARNING: tcpip_reaccept() failed" <<
+							std::endl;
 					}
 					tcpip_pipe2socket_in.erase(pi->first);
 					break;
@@ -1964,7 +1979,7 @@ int tcpip_io
 						return -203;
 					}
 				}
-				else if ((len == 0) || tcpip_user_signal_caught)
+				else if (len == 0)
 				{
 					tcpip_user_signal_caught = false;
 					std::cerr << "WARNING: broadcast connection collapsed for" <<
@@ -1974,8 +1989,17 @@ int tcpip_io
 					tcpip_broadcast_pipe2socket_in[pi->first] = -42;
 					if (tcpip_reaccept(pi->first, true))
 					{
-						std::cerr << "INFO: reaccept successful" << std::endl;
+						if (opt_verbose > 1)
+						{
+							std::cerr << "INFO: tcpip_reaccept() successful" <<
+								std::endl;
+						}
 						continue;
+					}
+					else if (opt_verbose)
+					{
+						std::cerr << "WARNING: tcpip_reaccept() failed" <<
+							std::endl;
 					}
 					tcpip_broadcast_pipe2socket_in.erase(pi->first);
 					break;
@@ -2140,6 +2164,8 @@ int tcpip_io
 					ssize_t num = write(tcpip_pipe2socket_out[i],
 						buf_out[i] + wnum,
 						len_out[i] - wnum);
+					if (tcpip_user_signal_caught)
+						num = -1, errno = EPIPE; // required ONLY for debugging
 					if (num < 0)
 					{
 						if ((errno == EWOULDBLOCK) || (errno == EINTR))
@@ -2196,6 +2222,8 @@ int tcpip_io
 					ssize_t num = write(tcpip_broadcast_pipe2socket_out[i],
 						broadcast_buf_out[i] + wnum,
 						broadcast_len_out[i] - wnum);
+					if (tcpip_user_signal_caught)
+						num = -1, errno = EPIPE; // required ONLY for debugging
 					if (num < 0)
 					{
 						if ((errno == EWOULDBLOCK) || (errno == EINTR))
