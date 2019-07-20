@@ -1593,7 +1593,10 @@ int tcpip_io
 		len_out.push_back(0);
 		broadcast_len_out.push_back(0);
 	}
-	std::vector<size_t> tcpip_reconnects, tcpip_broadcast_reconnects;
+	std::vector<size_t> tcpip_reconnects;
+	std::map<size_t, time_t> tcpip_reconnects_ttl;
+	std::vector<size_t> tcpip_broadcast_reconnects;
+	std::map<size_t, time_t> tcpip_broadcast_reconnects_ttl;
 	while (!signal_caught)
 	{
 		// do some other work beside I/O
@@ -1608,22 +1611,27 @@ int tcpip_io
 			if (num_reconnects > 1)
 				idx = tmcg_mpz_wrandom_ui() % num_reconnects;
 			size_t who = tcpip_reconnects[idx];
-			if (tcpip_reconnect(who, false))
+			time_t ttl = tcpip_reconnects_ttl[who];
+			if (time(NULL) > (ttl + DOTS_TIME_LOOP))
 			{
-				if (opt_verbose)
+				if (tcpip_reconnect(who, false))
 				{
-					std::cerr << "INFO: reconnect to P_" << who << " was" <<
-						" successful" << std::endl;
+					if (opt_verbose)
+					{
+						std::cerr << "INFO: reconnect to P_" << who <<
+							" was successful" << std::endl;
+					}
+					std::vector<size_t>::iterator it = std::find(
+						tcpip_reconnects.begin(), tcpip_reconnects.end(), who);
+					if (it != tcpip_reconnects.end())
+						tcpip_reconnects.erase(it);
+					tcpip_reconnects_ttl.erase(who);
 				}
-				std::vector<size_t>::iterator it = std::find(
-					tcpip_reconnects.begin(), tcpip_reconnects.end(), who);
-				if (it != tcpip_reconnects.end())
-					tcpip_reconnects.erase(it);
-			}
-			else if (opt_verbose > 1)
-			{
-				std::cerr << "WARNING: reconnect to P_" << who << " failed" <<
-					std::endl;
+				else if (opt_verbose > 1)
+				{
+					std::cerr << "WARNING: reconnect to P_" << who <<
+						" failed" << std::endl;
+				}
 			}
 		}
 		size_t num_broadcast_reconnects = tcpip_broadcast_reconnects.size();
@@ -1633,23 +1641,28 @@ int tcpip_io
 			if (num_broadcast_reconnects > 1)
 				idx = tmcg_mpz_wrandom_ui() % num_broadcast_reconnects;
 			size_t who = tcpip_broadcast_reconnects[idx];
-			if (tcpip_reconnect(who, true))
+			time_t ttl = tcpip_broadcast_reconnects_ttl[who];
+			if (time(NULL) > (ttl + DOTS_TIME_LOOP))
 			{
-				if (opt_verbose)
+				if (tcpip_reconnect(who, true))
 				{
-					std::cerr << "INFO: reconnect to P_" << who << " was" <<
-						" successful (broadcast channel)" << std::endl;
+					if (opt_verbose)
+					{
+						std::cerr << "INFO: reconnect to P_" << who <<
+							" was successful (broadcast channel)" << std::endl;
+					}
+					std::vector<size_t>::iterator it = std::find(
+						tcpip_broadcast_reconnects.begin(),
+						tcpip_broadcast_reconnects.end(), who);
+					if (it != tcpip_broadcast_reconnects.end())
+						tcpip_broadcast_reconnects.erase(it);
+					tcpip_broadcast_reconnects_ttl.erase(who);
 				}
-				std::vector<size_t>::iterator it = std::find(
-					tcpip_broadcast_reconnects.begin(),
-					tcpip_broadcast_reconnects.end(), who);
-				if (it != tcpip_broadcast_reconnects.end())
-					tcpip_broadcast_reconnects.erase(it);
-			}
-			else if (opt_verbose > 1)
-			{
-				std::cerr << "WARNING: reconnect to P_" << who << " failed" <<
-					" (broadcast channel)" << std::endl;
+				else if (opt_verbose > 1)
+				{
+					std::cerr << "WARNING: reconnect to P_" << who <<
+						" failed (broadcast channel)" << std::endl;
+				}
 			}
 		}
 		// do buffered I/O for DOTS and MHD
@@ -2188,6 +2201,7 @@ int tcpip_io
 								perror("WARNING: tcpip_io (close)");
 							tcpip_pipe2socket_out.erase(i);
 							tcpip_reconnects.push_back(i);
+							tcpip_reconnects_ttl[i] = time(NULL);
 							break;
 						}
 						else
@@ -2249,6 +2263,7 @@ int tcpip_io
 								perror("WARNING: tcpip_io (close)");
 							tcpip_broadcast_pipe2socket_out.erase(i);
 							tcpip_broadcast_reconnects.push_back(i);
+							tcpip_broadcast_reconnects_ttl[i] = time(NULL);
 							break;
 						}
 						else
