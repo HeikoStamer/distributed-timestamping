@@ -39,6 +39,7 @@ extern std::stringstream		policyfile;
 
 static const size_t				tcpip_pipe_buffer_size = 4096;
 uint16_t						tcpip_start = 0;
+bool							tcpip_user_signal_caught = false;
 
 std::string 					tcpip_thispeer;
 std::map<std::string, size_t> 	tcpip_peer2pipe;
@@ -155,6 +156,18 @@ static RETSIGTYPE tcpip_sig_handler_quit
 static RETSIGTYPE tcpip_sig_handler_pipe
 	(int sig)
 {
+	if (opt_verbose)
+	{
+		std::cerr << "tcpip_sig_handler_pipe(): got signal " << sig <<
+			std::endl;
+	}
+}
+
+// This signal handler is called when receiving SIGUSR1.
+static RETSIGTYPE tcpip_sig_handler_usr1
+	(int sig)
+{
+	tcpip_user_signal_caught = true;
 	if (opt_verbose)
 	{
 		std::cerr << "tcpip_sig_handler_pipe(): got signal " << sig <<
@@ -523,7 +536,7 @@ static int tcpip_mhd_callback
 				CallasDonnerhackeFinneyShawThayerRFC4880::
 					PacketTimeEncode(time(NULL), salt);
 				salt.pop_back(); // remove two most significant octets of time, 
-				salt.pop_back(); // thus salt will change at least after 18.5 days
+				salt.pop_back(); // salt will change at least after 18.5 days
 				size_t sasi = salt.size();
 				for (size_t i = 0; i < (8 - sasi); i++)
 				{
@@ -731,6 +744,12 @@ void tcpip_init
 		exit(-1);
 	}
 	if (sigaction(SIGTERM, &act, NULL) < 0)
+	{
+		perror("ERROR: dots-tcpip-common (sigaction)");
+		exit(-1);
+	}
+	act.sa_handler = &tcpip_sig_handler_usr1;
+	if (sigaction(SIGUSR1, &act, NULL) < 0)
 	{
 		perror("ERROR: dots-tcpip-common (sigaction)");
 		exit(-1);
@@ -1595,6 +1614,11 @@ int tcpip_io
 				if (it != tcpip_reconnects.end())
 					tcpip_reconnects.erase(it);
 			}
+			else if (opt_verbose > 1)
+			{
+				std::cerr << "WARNING: reconnect to P_" << who << " failed" <<
+					std::endl;
+			}
 		}
 		size_t num_broadcast_reconnects = tcpip_broadcast_reconnects.size();
 		if (num_broadcast_reconnects > 0)
@@ -1615,6 +1639,11 @@ int tcpip_io
 					tcpip_broadcast_reconnects.end(), who);
 				if (it != tcpip_broadcast_reconnects.end())
 					tcpip_broadcast_reconnects.erase(it);
+			}
+			else if (opt_verbose > 1)
+			{
+				std::cerr << "WARNING: reconnect to P_" << who << " failed" <<
+					" (broadcast channel)" << std::endl;
 			}
 		}
 		// do buffered I/O for DOTS and MHD
@@ -1830,8 +1859,9 @@ int tcpip_io
 						return -203;
 					}
 				}
-				else if (len == 0)
+				else if ((len == 0) || tcpip_user_signal_caught)
 				{
+					tcpip_user_signal_caught = false;
 					std::cerr << "WARNING: connection collapsed for" <<
 						" P_" << pi->first << std::endl;
 					if (close(tcpip_pipe2socket_in[pi->first]) < 0)
@@ -1934,8 +1964,9 @@ int tcpip_io
 						return -203;
 					}
 				}
-				else if (len == 0)
+				else if ((len == 0) || tcpip_user_signal_caught)
 				{
+					tcpip_user_signal_caught = false;
 					std::cerr << "WARNING: broadcast connection collapsed for" <<
 						" P_" << pi->first << std::endl;
 					if (close(tcpip_broadcast_pipe2socket_in[pi->first]) < 0)
