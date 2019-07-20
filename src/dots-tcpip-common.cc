@@ -2125,7 +2125,7 @@ int tcpip_io
 					ssize_t num = write(tcpip_pipe2socket_out[i],
 						buf_out[i] + wnum,
 						len_out[i] - wnum);
-					if (tcpip_user_signal_caught)
+					if (tcpip_user_signal_caught && (tmcg_mpz_wrandom_ui() % 2))
 					{
 						tcpip_user_signal_caught = false;
 						num = -1, errno = EPIPE; // required ONLY for debugging
@@ -2187,7 +2187,7 @@ int tcpip_io
 					ssize_t num = write(tcpip_broadcast_pipe2socket_out[i],
 						broadcast_buf_out[i] + wnum,
 						broadcast_len_out[i] - wnum);
-					if (tcpip_user_signal_caught)
+					if (tcpip_user_signal_caught && (tmcg_mpz_wrandom_ui() % 2))
 					{
 						tcpip_user_signal_caught = false;
 						num = -1, errno = EPIPE; // required ONLY for debugging
