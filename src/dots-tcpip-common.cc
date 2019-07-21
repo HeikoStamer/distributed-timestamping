@@ -1641,6 +1641,10 @@ int tcpip_io
 					if (pi->second > maxfd)
 						maxfd = pi->second;
 				}
+				FD_SET(pi->second, &rfds);
+				if (pi->second > maxfd)
+					maxfd = pi->second;
+
 			}
 			else
 			{
@@ -1660,6 +1664,9 @@ int tcpip_io
 					if (pi->second > maxfd)
 						maxfd = pi->second;
 				}
+				FD_SET(pi->second, &rfds);
+				if (pi->second > maxfd)
+					maxfd = pi->second;
 			}
 			else
 			{
@@ -1874,7 +1881,7 @@ int tcpip_io
 			}
 			else
 			{
-				// write some dummy bytes to check whether connection is alive FIXME: read dummy bytes
+				// write some dummy bytes to check whether connection is alive
 				ssize_t num = write(pi->second, buf_in[pi->first],
 					sizeof(buf_in[pi->first]));
 				if (num < 0)
@@ -2232,6 +2239,32 @@ int tcpip_io
 					memmove(buf_out[i], buf_out[i] + wnum, len_out[i]);
 				}
 			}
+			if (FD_ISSET(tcpip_pipe2socket_out[i], &rfds))
+			{
+				// read some dummy bytes to check for broken connections 
+				char buf[tcpip_pipe_buffer_size];
+				ssize_t num = read(tcpip_pipe2socket_out[i],
+					buf, sizeof(buf));
+				if (num < 0)
+				{
+					if ((errno != EWOULDBLOCK) && (errno != EINTR) &&
+						(errno != EAGAIN))
+					{
+						perror("ERROR: tcpip_io (read)");
+						return -203;
+					}
+				}
+				else if (num == 0)
+				{
+					std::cerr << "WARNING: connection collapsed" <<
+						" for P_" << i << std::endl;
+					if (close(tcpip_pipe2socket_out[i]) < 0)
+						perror("WARNING: tcpip_io (close)");
+					tcpip_pipe2socket_out.erase(i);
+					reconnects.push_back(i);
+					reconnects_ttl[i] = time(NULL);
+				}
+			}
 			if (tcpip_broadcast_pipe2socket_out.count(i) == 0)
 				continue;
 			if (FD_ISSET(tcpip_broadcast_pipe2socket_out[i], &wfds) &&
@@ -2293,6 +2326,32 @@ int tcpip_io
 					broadcast_len_out[i] -= wnum;
 					memmove(broadcast_buf_out[i], broadcast_buf_out[i] + wnum,
 						broadcast_len_out[i]);
+				}
+			}
+			if (FD_ISSET(tcpip_broadcast_pipe2socket_out[i], &rfds))
+			{
+				// read some dummy bytes to check for broken connections 
+				char buf[tcpip_pipe_buffer_size];
+				ssize_t num = read(tcpip_broadcast_pipe2socket_out[i],
+					buf, sizeof(buf));
+				if (num < 0)
+				{
+					if ((errno != EWOULDBLOCK) && (errno != EINTR) &&
+						(errno != EAGAIN))
+					{
+						perror("ERROR: tcpip_io (read)");
+						return -203;
+					}
+				}
+				else if (num == 0)
+				{
+					std::cerr << "WARNING: broadcast connection collapsed" <<
+						" for P_" << i << std::endl;
+					if (close(tcpip_broadcast_pipe2socket_out[i]) < 0)
+						perror("WARNING: tcpip_io (close)");
+					tcpip_broadcast_pipe2socket_out.erase(i);
+					broadcast_reconnects.push_back(i);
+					broadcast_reconnects_ttl[i] = time(NULL);
 				}
 			}
 		}
