@@ -2256,8 +2256,13 @@ int tcpip_io
 					if ((errno != EWOULDBLOCK) && (errno != EINTR) &&
 						(errno != EAGAIN))
 					{
-						perror("ERROR: tcpip_io (read)");
-						return -203;
+						std::cerr << "WARNING: connection collapsed" <<
+							" for P_" << i << std::endl;
+						if (close(tcpip_pipe2socket_out[i]) < 0)
+							perror("WARNING: tcpip_io (close)");
+						tcpip_pipe2socket_out.erase(i);
+						reconnects.push_back(i);
+						reconnects_ttl[i] = time(NULL);
 					}
 				}
 				else if (num == 0)
@@ -2346,8 +2351,13 @@ int tcpip_io
 					if ((errno != EWOULDBLOCK) && (errno != EINTR) &&
 						(errno != EAGAIN))
 					{
-						perror("ERROR: tcpip_io (read)");
-						return -203;
+						std::cerr << "WARNING: broadcast connection" <<
+							" collapsed for P_" << i << std::endl;
+						if (close(tcpip_broadcast_pipe2socket_out[i]) < 0)
+							perror("WARNING: tcpip_io (close)");
+						tcpip_broadcast_pipe2socket_out.erase(i);
+						broadcast_reconnects.push_back(i);
+						broadcast_reconnects_ttl[i] = time(NULL);
 					}
 				}
 				else if (num == 0)
