@@ -1882,7 +1882,7 @@ int tcpip_io
 					len_in[pi->first] += len;
 				}
 			}
-			else if (time(NULL) > (dummy_time[pi->first] + 2))
+			if (time(NULL) > (dummy_time[pi->first] + 2))
 			{
 				// write some dummy bytes to check whether connection is alive
 				dummy_time[pi->first] = time(NULL);
@@ -2015,7 +2015,7 @@ int tcpip_io
 					broadcast_len_in[pi->first] += len;
 				}
 			}
-			else if (time(NULL) > (broadcast_dummy_time[pi->first] + 2))
+			if (time(NULL) > (broadcast_dummy_time[pi->first] + 2))
 			{
 				// write some dummy bytes to check whether connection is alive
 				broadcast_dummy_time[pi->first] = time(NULL);
