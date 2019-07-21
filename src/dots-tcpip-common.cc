@@ -2245,6 +2245,8 @@ int tcpip_io
 					memmove(buf_out[i], buf_out[i] + wnum, len_out[i]);
 				}
 			}
+			if (tcpip_pipe2socket_out.count(i) == 0)
+				continue;
 			if (FD_ISSET(tcpip_pipe2socket_out[i], &rfds))
 			{
 				// read some dummy bytes to check for broken connections 
@@ -2340,6 +2342,8 @@ int tcpip_io
 						broadcast_len_out[i]);
 				}
 			}
+			if (tcpip_broadcast_pipe2socket_out.count(i) == 0)
+				continue;
 			if (FD_ISSET(tcpip_broadcast_pipe2socket_out[i], &rfds))
 			{
 				// read some dummy bytes to check for broken connections 
