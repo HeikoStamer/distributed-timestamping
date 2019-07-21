@@ -2215,7 +2215,8 @@ int tcpip_io
 							perror("WARNING: tcpip_io (write)");
 							break;
 						}
-						else if ((errno == ECONNRESET) || (errno == EPIPE))
+						else if ((errno == ECONNRESET) || (errno == EPIPE) ||
+							(errno == EBADF))
 						{
 							std::cerr << "WARNING: connection collapsed" <<
 								" for P_" << i << std::endl;
@@ -2303,7 +2304,8 @@ int tcpip_io
 							perror("WARNING: tcpip_io (write)");
 							break;
 						}
-						else if ((errno == ECONNRESET) || (errno == EPIPE))
+						else if ((errno == ECONNRESET) || (errno == EPIPE) ||
+							(errno == EBADF))
 						{
 							std::cerr << "WARNING: broadcast connection" <<
 								" collapsed for P_" << i << std::endl;
