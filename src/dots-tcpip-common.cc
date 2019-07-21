@@ -1500,12 +1500,15 @@ int tcpip_io
 	char buf_out[peers.size()][tcpip_pipe_buffer_size];
 	char broadcast_buf_out[peers.size()][tcpip_pipe_buffer_size];
 	std::vector<size_t> len_in, broadcast_len_in, len_out, broadcast_len_out;
+	std::vector<time_t> dummy_time, broadcast_dummy_time;
 	for (size_t i = 0; i < peers.size(); i++)
 	{
 		len_in.push_back(0);
 		broadcast_len_in.push_back(0);
 		len_out.push_back(0);
 		broadcast_len_out.push_back(0);
+		dummy_time.push_back(time(NULL));
+		broadcast_dummy_time.push_back(time(NULL));
 	}
 	std::vector<size_t> reconnects, reaccepts;
 	std::map<size_t, time_t> reconnects_ttl, reaccepts_ttl;
@@ -1860,8 +1863,8 @@ int tcpip_io
 				}
 				else if (len == 0)
 				{
-					std::cerr << "WARNING: connection collapsed for" <<
-						" P_" << pi->first << std::endl;
+					std::cerr << "WARNING: connection collapsed" <<
+						" for P_" << pi->first << std::endl;
 					if (close(pi->second) < 0)
 						perror("WARNING: tcpip_io (close)");
 					tcpip_pipe2socket_in.erase(pi->first);
@@ -1879,9 +1882,10 @@ int tcpip_io
 					len_in[pi->first] += len;
 				}
 			}
-			else
+			else if (time(NULL) > (dummy_time[pi->first] + 2))
 			{
 				// write some dummy bytes to check whether connection is alive
+				dummy_time[pi->first] = time(NULL);
 				ssize_t num = write(pi->second, buf_in[pi->first],
 					sizeof(buf_in[pi->first]));
 				if (num < 0)
@@ -2011,9 +2015,10 @@ int tcpip_io
 					broadcast_len_in[pi->first] += len;
 				}
 			}
-			else
+			else if (time(NULL) > (broadcast_dummy_time[pi->first] + 2))
 			{
 				// write some dummy bytes to check whether connection is alive
+				broadcast_dummy_time[pi->first] = time(NULL);
 				ssize_t num = write(pi->second, broadcast_buf_in[pi->first],
 					sizeof(broadcast_buf_in[pi->first]));
 				if (num < 0)
