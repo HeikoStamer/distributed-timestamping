@@ -1994,7 +1994,12 @@ int tcpip_io
 						wnum += num;
 				}
 				while (wnum < broadcast_len_in[i]);
-				broadcast_len_in[i] -= wnum;
+				if (wnum > 0)
+				{
+					broadcast_len_in[i] -= wnum;
+					memmove(broadcast_buf_in[i],
+						broadcast_buf_in[i] + wnum, broadcast_len_in[i]);
+				}
 			}
 		}
 		for (size_t i = 0; i < peers.size(); i++)
@@ -2027,7 +2032,7 @@ int tcpip_io
 					signal_caught = true; // handle this as an interrupt
 					continue;
 				}
-				else if (tcpip_pipe2socket_out.count(i))
+				else if (tcpip_pipe2socket_out.count(i) > 0)
 				{
 					len_out[i] += len;
 				}
@@ -2068,7 +2073,7 @@ int tcpip_io
 					signal_caught = true; // handle this as an interrupt
 					continue;
 				}
-				else if (tcpip_broadcast_pipe2socket_out.count(i))
+				else if (tcpip_broadcast_pipe2socket_out.count(i) > 0)
 				{
 					broadcast_len_out[i] += len;
 				}
