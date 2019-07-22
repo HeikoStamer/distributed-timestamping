@@ -2102,7 +2102,11 @@ int tcpip_io
 					if (tcpip_user_signal_caught && (tmcg_mpz_wrandom_ui() % 2))
 					{
 						tcpip_user_signal_caught = false;
+						if (num > 0)
+							wnum += num;
 						num = -1, errno = EPIPE; // required ONLY for debugging
+						if (shutdown(tcpip_pipe2socket_out[i], SHUT_RDWR) < 0)
+							perror("WARNING: tcpip_io (shutdown)");
 					}
 					if (num < 0)
 					{
@@ -2165,7 +2169,14 @@ int tcpip_io
 					if (tcpip_user_signal_caught && (tmcg_mpz_wrandom_ui() % 2))
 					{
 						tcpip_user_signal_caught = false;
+						if (num > 0)
+							wnum += num;
 						num = -1, errno = EPIPE; // required ONLY for debugging
+						if (shutdown(tcpip_broadcast_pipe2socket_out[i],
+							SHUT_RDWR) < 0)
+						{
+							perror("WARNING: tcpip_io (shutdown)");
+						}
 					}
 					if (num < 0)
 					{
