@@ -1815,7 +1815,6 @@ int tcpip_io
 						std::cerr << "INFO: reaccept from P_" << i <<
 							" was successful" << std::endl;
 					}
-					len_in[i] = 0; // invalidate read buffer
 				}
 			}
 			fd = tcpip_broadcast_pipe2socket[i];
@@ -1828,7 +1827,6 @@ int tcpip_io
 						std::cerr << "INFO: reaccept from P_" << i <<
 							" was successful (broadcast channel)" << std::endl;
 					}
-					broadcast_len_in[i] = 0; // invalidate read buffer
 				}
 			}
 		}
