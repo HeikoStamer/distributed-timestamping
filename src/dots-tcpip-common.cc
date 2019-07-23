@@ -1288,9 +1288,35 @@ bool tcpip_reaccept
 		return false;
 	}
 	if (broadcast)
+	{
+		if (tcpip_broadcast_pipe2socket_in.count(peer) > 0)
+		{
+char buf[1024];
+ssize_t num = read(tcpip_broadcast_pipe2socket_in[peer], buf, sizeof(buf));
+if (num >= 0)
+std::cerr << "BUG: read " << num << " bytes from broken fd" << std::endl;
+else
+perror("ERROR: tcpip_reaccept (read)");
+			if (close(tcpip_broadcast_pipe2socket_in[peer]) < 0)
+				perror("ERROR: tcpip_reaccept (close)");
+		}
 		tcpip_broadcast_pipe2socket_in[peer] = connfd;
+	}
 	else
+	{
+		if (tcpip_pipe2socket_in.count(peer) > 0)
+		{
+char buf[1024];
+ssize_t num = read(tcpip_pipe2socket_in[peer], buf, sizeof(buf));
+if (num >= 0)
+std::cerr << "BUG: read " << num << " bytes from broken fd" << std::endl;
+else
+perror("ERROR: tcpip_reaccept (read)");
+			if (close(tcpip_pipe2socket_in[peer]) < 0)
+				perror("ERROR: tcpip_reaccept (close)");
+		}
 		tcpip_pipe2socket_in[peer] = connfd;
+	}
 	char ipaddr[INET6_ADDRSTRLEN];
 	int ret;
 	if ((ret = getnameinfo((struct sockaddr *)&sin, slen,
