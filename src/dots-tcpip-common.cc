@@ -37,7 +37,7 @@ extern int						opt_verbose;
 extern bool						fork_instance(const size_t whoami);
 extern std::stringstream		policyfile;
 
-static const size_t				tcpip_pipe_buffer_size = 4096;
+static const size_t				tcpip_pipe_buffer_size = 65536;
 uint16_t						tcpip_start = 0;
 bool							tcpip_user_signal_caught = false;
 
