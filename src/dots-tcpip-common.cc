@@ -1291,14 +1291,9 @@ bool tcpip_reaccept
 	{
 		if (tcpip_broadcast_pipe2socket_in.count(peer) > 0)
 		{
-char buf[1024];
-ssize_t num = read(tcpip_broadcast_pipe2socket_in[peer], buf, sizeof(buf));
-if (num >= 0)
-std::cerr << "BUG: read " << num << " bytes from broken fd" << std::endl;
-else
-perror("ERROR: tcpip_reaccept (read)");
 			if (close(tcpip_broadcast_pipe2socket_in[peer]) < 0)
 				perror("ERROR: tcpip_reaccept (close)");
+			tcpip_broadcast_pipe2socket_in.erase(peer);
 		}
 		tcpip_broadcast_pipe2socket_in[peer] = connfd;
 	}
@@ -1306,14 +1301,9 @@ perror("ERROR: tcpip_reaccept (read)");
 	{
 		if (tcpip_pipe2socket_in.count(peer) > 0)
 		{
-char buf[1024];
-ssize_t num = read(tcpip_pipe2socket_in[peer], buf, sizeof(buf));
-if (num >= 0)
-std::cerr << "BUG: read " << num << " bytes from broken fd" << std::endl;
-else
-perror("ERROR: tcpip_reaccept (read)");
 			if (close(tcpip_pipe2socket_in[peer]) < 0)
 				perror("ERROR: tcpip_reaccept (close)");
+			tcpip_pipe2socket_in.erase(peer);
 		}
 		tcpip_pipe2socket_in[peer] = connfd;
 	}
@@ -1816,6 +1806,11 @@ int tcpip_io
 							" was successful" << std::endl;
 					}
 				}
+				else if (opt_verbose)
+				{
+					std::cerr << "WARNING: reaccept from P_" << i <<
+						" failed" << std::endl;
+				}
 			}
 			fd = tcpip_broadcast_pipe2socket[i];
 			if (FD_ISSET(fd, &rfds))
@@ -1827,6 +1822,11 @@ int tcpip_io
 						std::cerr << "INFO: reaccept from P_" << i <<
 							" was successful (broadcast channel)" << std::endl;
 					}
+				}
+				else if (opt_verbose)
+				{
+					std::cerr << "WARNING: reaccept from P_" << i <<
+						" failed (broadcast channel)" << std::endl;
 				}
 			}
 		}
