@@ -2028,6 +2028,8 @@ int tcpip_io
 		for (size_t i = 0; i < peers.size(); i++)
 		{
 			size_t max = tcpip_pipe_buffer_size - len_out[i];
+			if ((max == 0) && (opt_verbose > 0))
+				std::cerr << "WARNING: outgoing buffer exceeded" << std::endl;
 			if (FD_ISSET(pipefd[thisidx][i][0], &rfds) && (max > 0))
 			{
 				ssize_t len = read(pipefd[thisidx][i][0],
@@ -2055,20 +2057,12 @@ int tcpip_io
 					signal_caught = true; // handle this as an interrupt
 					continue;
 				}
-				else if (tcpip_pipe2socket_out.count(i) > 0)
-				{
-					len_out[i] += len;
-				}
 				else
-				{
-					if (opt_verbose > 2)
-					{
-						std::cerr << "INFO: discarding " << len << " bytes" <<
-							" for P_" << i << std::endl;
-					}
-				}
+					len_out[i] += len;
 			}
 			max = tcpip_pipe_buffer_size - broadcast_len_out[i];
+			if ((max == 0) && (opt_verbose > 0))
+				std::cerr << "WARNING: outgoing buffer exceeded" << std::endl;
 			if (FD_ISSET(broadcast_pipefd[thisidx][i][0], &rfds))
 			{
 				ssize_t len = read(broadcast_pipefd[thisidx][i][0],
@@ -2096,18 +2090,8 @@ int tcpip_io
 					signal_caught = true; // handle this as an interrupt
 					continue;
 				}
-				else if (tcpip_broadcast_pipe2socket_out.count(i) > 0)
-				{
-					broadcast_len_out[i] += len;
-				}
 				else
-				{
-					if (opt_verbose > 2)
-					{
-						std::cerr << "INFO: discarding " << len << " bytes" <<
-							" for P_" << i << std::endl;
-					}
-				}
+					broadcast_len_out[i] += len;
 			}
 		}
 		for (size_t i = 0; i < peers.size(); i++)
@@ -2254,9 +2238,9 @@ int tcpip_io
 			std::cerr << "ERROR: MHD_run_from_select() failed" << std::endl;
 			return -205;
 		}
-	}
+	} // end of while-loop
 	sleep(5 * DOTS_TIME_POLL); // sleep few seconds to terminate gracefully
-	return -206;
+	return -500;
 }
 
 void tcpip_close
