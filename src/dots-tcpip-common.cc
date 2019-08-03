@@ -1831,6 +1831,8 @@ int tcpip_io
 			pi != tcpip_pipe2socket_in.end(); ++pi)
 		{
 			size_t max = tcpip_pipe_buffer_size - len_in[pi->first];
+			if ((max == 0) && (opt_verbose > 0))
+				std::cerr << "WARNING: incoming buffer exceeded" << std::endl;
 			if (FD_ISSET(pi->second, &rfds) && (max > 0))
 			{
 				ssize_t len = read(pi->second,
@@ -1929,6 +1931,8 @@ int tcpip_io
 			pi != tcpip_broadcast_pipe2socket_in.end(); ++pi)
 		{
 			size_t max = tcpip_pipe_buffer_size - broadcast_len_in[pi->first];
+			if ((max == 0) && (opt_verbose > 0))
+				std::cerr << "WARNING: incoming buffer exceeded" << std::endl;
 			if (FD_ISSET(pi->second, &rfds) && (max > 0))
 			{
 				ssize_t len = read(pi->second, broadcast_buf_in[pi->first] +
