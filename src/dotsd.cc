@@ -127,12 +127,14 @@ void run_instance
 		bP_key.push_back(key.str());
 		ping[i] = 0; // initialize array for PING timestamps
 	}
-	// create asynchronous authenticated unicast channels
+	// create asynchronous authenticated unicast channels (chunked)
 	aiounicast_select *aiou = new aiounicast_select(peers.size(), whoami,
-		uP_in, uP_out, uP_key, aiounicast::aio_scheduler_roundrobin, (opt_W * 60));
-	// create asynchronous authenticated unicast channels for broadcast
+		uP_in, uP_out, uP_key, aiounicast::aio_scheduler_roundrobin,
+		(opt_W * 60), true, true, true);
+	// create asynchronous authenticated unicast channels for broadcast (chunked)
 	aiounicast_select *aiou2 = new aiounicast_select(peers.size(), whoami,
-		bP_in, bP_out, bP_key, aiounicast::aio_scheduler_roundrobin, (opt_W * 60));
+		bP_in, bP_out, bP_key, aiounicast::aio_scheduler_roundrobin,
+		(opt_W * 60), true, true, true);
 	// create an instance of a reliable broadcast protocol (RBC)
 	std::string myID = "dotsd|" + std::string(protocol) + "|";
 	for (size_t i = 0; i < peers.size(); i++)
