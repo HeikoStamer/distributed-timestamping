@@ -37,7 +37,7 @@ extern int						opt_verbose;
 extern bool						fork_instance(const size_t whoami);
 extern std::stringstream		policyfile;
 
-static const size_t				tcpip_pipe_buffer_size = 65536;
+static const size_t				tcpip_pipe_buffer_size = 262144;
 uint16_t						tcpip_start = 0;
 bool							tcpip_user_signal_caught = false;
 
@@ -1831,7 +1831,7 @@ int tcpip_io
 			pi != tcpip_pipe2socket_in.end(); ++pi)
 		{
 			size_t max = tcpip_pipe_buffer_size - len_in[pi->first];
-			if ((max == 0) && (opt_verbose > 0))
+			if (FD_ISSET(pi->second, &rfds) && (max == 0) && (opt_verbose > 0))
 				std::cerr << "WARNING: incoming buffer exceeded" << std::endl;
 			if (FD_ISSET(pi->second, &rfds) && (max > 0))
 			{
@@ -1931,7 +1931,7 @@ int tcpip_io
 			pi != tcpip_broadcast_pipe2socket_in.end(); ++pi)
 		{
 			size_t max = tcpip_pipe_buffer_size - broadcast_len_in[pi->first];
-			if ((max == 0) && (opt_verbose > 0))
+			if (FD_ISSET(pi->second, &rfds) && (max == 0) && (opt_verbose > 0))
 				std::cerr << "WARNING: incoming buffer exceeded" << std::endl;
 			if (FD_ISSET(pi->second, &rfds) && (max > 0))
 			{
@@ -2032,8 +2032,11 @@ int tcpip_io
 		for (size_t i = 0; i < peers.size(); i++)
 		{
 			size_t max = tcpip_pipe_buffer_size - len_out[i];
-			if ((max == 0) && (opt_verbose > 0))
+			if (FD_ISSET(pipefd[thisidx][i][0], &rfds) && (max == 0) &&
+				(opt_verbose > 0))
+			{
 				std::cerr << "WARNING: outgoing buffer exceeded" << std::endl;
+			}
 			if (FD_ISSET(pipefd[thisidx][i][0], &rfds) && (max > 0))
 			{
 				ssize_t len = read(pipefd[thisidx][i][0],
@@ -2065,9 +2068,12 @@ int tcpip_io
 					len_out[i] += len;
 			}
 			max = tcpip_pipe_buffer_size - broadcast_len_out[i];
-			if ((max == 0) && (opt_verbose > 0))
+			if (FD_ISSET(broadcast_pipefd[thisidx][i][0], &rfds) &&
+				(max == 0) && (opt_verbose > 0))
+			{
 				std::cerr << "WARNING: outgoing buffer exceeded" << std::endl;
-			if (FD_ISSET(broadcast_pipefd[thisidx][i][0], &rfds))
+			}
+			if (FD_ISSET(broadcast_pipefd[thisidx][i][0], &rfds) && (max > 0))
 			{
 				ssize_t len = read(broadcast_pipefd[thisidx][i][0],
 					broadcast_buf_out[i] + broadcast_len_out[i], max);
