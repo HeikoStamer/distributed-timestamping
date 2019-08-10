@@ -41,9 +41,9 @@ AC_DEFINE(DOTS_TIME_POLL, 1, [Define the timeout for RBC channel polling in\
  seconds])
 AC_DEFINE(DOTS_TIME_LOOP, 30, [Define number of seconds to stay inside inner\
  loop])
-AC_DEFINE(DOTS_TIME_TERM, 800, [Define number of seconds until a running DKGPG\
+AC_DEFINE(DOTS_TIME_TERM, 1400, [Define number of seconds until a running DKGPG\
  process is terminated])
-AC_DEFINE(DOTS_TIME_KILL, 900, [Define number of seconds until a running DKGPG\
+AC_DEFINE(DOTS_TIME_KILL, 1700, [Define number of seconds until a running DKGPG\
  process is killed])
 AC_DEFINE(DOTS_TIME_INACTIVE, 150, [Define number of seconds without PING\
  received that turns a peer inactive])

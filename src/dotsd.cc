@@ -127,11 +127,11 @@ void run_instance
 		bP_key.push_back(key.str());
 		ping[i] = 0; // initialize array for PING timestamps
 	}
-	// create asynchronous authenticated unicast channels (chunked)
+	// create asynchronous authenticated channels (chunked mode)
 	aiounicast_select *aiou = new aiounicast_select(peers.size(), whoami,
 		uP_in, uP_out, uP_key, aiounicast::aio_scheduler_roundrobin,
 		(opt_W * 60), true, true, true);
-	// create asynchronous authenticated unicast channels for broadcast (chunked)
+	// create asynchronous authenticated channels for broadcast (chunked mode)
 	aiounicast_select *aiou2 = new aiounicast_select(peers.size(), whoami,
 		bP_in, bP_out, bP_key, aiounicast::aio_scheduler_roundrobin,
 		(opt_W * 60), true, true, true);

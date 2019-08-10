@@ -241,7 +241,6 @@ bool dots_start_process
 		if (pid == 0)
 		{
 			/* BEGIN child code (execute program) */
-/*
 			if ((dup2(pipe1fd[0], fileno(stdin)) < 0) ||
 				(dup2(pipe2fd[1], fileno(stdout)) < 0) ||
 				(dup2(pipe3fd[1], fileno(stderr)) < 0))
@@ -256,7 +255,6 @@ bool dots_start_process
 				perror("ERROR: dots_start_process (close)");
 				exit(-1);
 			}
-*/
 			std::stringstream ifilename;
 			ifilename << "dotsd_" << hostname << "_" << sn << ".asc";
 			std::string url = "/signature?sn=" + sn;
@@ -294,7 +292,6 @@ bool dots_start_process
 			std::vector<std::string> dkgpg_args;
 			dkgpg_args.push_back(cmd); //
 			dkgpg_args.push_back("-V"); // -V
-dkgpg_args.push_back("-V"); // -V FIXME: remove because output may contain secrets!
 			dkgpg_args.push_back("-a"); // -a
 			std::stringstream serial;
 			serial << "serialnumber@" << lh << ":" << sn;
