@@ -16,9 +16,9 @@
 #   along with DOTS; if not, write to the Free Software
 #   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
 #
-# (Process this file with autoconf to produce a configure script.)
+# (Please process this file with autoconf to produce a configure script.)
 
-AC_REVISION([20190716])
+AC_REVISION([20190810])
 AC_PREREQ(2.61)
 
 AC_INIT([Distributed OpenPGP Timestamping Service], [0.0.2],

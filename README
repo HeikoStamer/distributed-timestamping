@@ -9,7 +9,7 @@ Copyright (C) 2018, 2019  Heiko Stamer <HeikoStamer@gmx.net>
 Introduction
 ------------
   This package contains a simple daemon to participate in the operation of a
-  Distributed OpenPGP Timestamping Service (DOTS).
+  so-called Distributed OpenPGP Timestamping Service (DOTS).
 
   All programs and scripts of DOTS are Free Software according to the definition
   of the Free Software Foundation. The source code is released under the GNU
@@ -21,7 +21,7 @@ Requirements
   You need the following programs, libraries and appropriate header files to
   build (GNU gcc/g++ >= 6.0.x or higher is recommended) DOTS successfully:
 
-  * Distributed Privacy Guard (DKGPG), version >= 1.1.2
+  * Distributed Privacy Guard (DKGPG), version >= 1.1.3
     https://savannah.nongnu.org/projects/dkgpg
   * Toolbox for Mental Card Games (LibTMCG), version >= 1.4.0
     https://savannah.nongnu.org/projects/libtmcg
