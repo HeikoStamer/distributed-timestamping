@@ -45,7 +45,7 @@ AC_DEFINE(DOTS_TIME_TERM, 1400, [Define number of seconds until a running DKGPG\
  process is terminated])
 AC_DEFINE(DOTS_TIME_KILL, 1700, [Define number of seconds until a running DKGPG\
  process is killed])
-AC_DEFINE(DOTS_TIME_INACTIVE, 150, [Define number of seconds without PING\
+AC_DEFINE(DOTS_TIME_INACTIVE, 300, [Define number of seconds without PING\
  received that turns a peer inactive])
 AC_DEFINE(DOTS_TIME_UNCONFIRMED, 300, [Define number of seconds that a request\
  is hold without confirmation])
