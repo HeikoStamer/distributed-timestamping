@@ -1831,8 +1831,6 @@ int tcpip_io
 			pi != tcpip_pipe2socket_in.end(); ++pi)
 		{
 			size_t max = tcpip_pipe_buffer_size - len_in[pi->first];
-			if (FD_ISSET(pi->second, &rfds) && (max == 0) && (opt_verbose > 0))
-				std::cerr << "WARNING: incoming buffer exceeded" << std::endl;
 			if (FD_ISSET(pi->second, &rfds) && (max > 0))
 			{
 				ssize_t len = read(pi->second,
@@ -1871,6 +1869,12 @@ int tcpip_io
 							"connection for P_" << pi->first << std::endl;
 					}
 					len_in[pi->first] += len;
+					if ((opt_verbose > 0) &&
+						((tcpip_pipe_buffer_size - len_in[pi->first]) == 0))
+					{
+						std::cerr << "WARNING: incoming buffer exceeded" <<
+							std::endl;
+					}
 				}
 			}
 		}
@@ -1931,8 +1935,6 @@ int tcpip_io
 			pi != tcpip_broadcast_pipe2socket_in.end(); ++pi)
 		{
 			size_t max = tcpip_pipe_buffer_size - broadcast_len_in[pi->first];
-			if (FD_ISSET(pi->second, &rfds) && (max == 0) && (opt_verbose > 0))
-				std::cerr << "WARNING: incoming buffer exceeded" << std::endl;
 			if (FD_ISSET(pi->second, &rfds) && (max > 0))
 			{
 				ssize_t len = read(pi->second, broadcast_buf_in[pi->first] +
@@ -1972,6 +1974,12 @@ int tcpip_io
 							std::endl;
 					}
 					broadcast_len_in[pi->first] += len;
+					if ((opt_verbose > 0) && ((tcpip_pipe_buffer_size -
+						broadcast_len_in[pi->first]) == 0))
+					{
+						std::cerr << "WARNING: incoming buffer exceeded" <<
+							std::endl;
+					}
 				}
 			}
 		}
@@ -2032,11 +2040,6 @@ int tcpip_io
 		for (size_t i = 0; i < peers.size(); i++)
 		{
 			size_t max = tcpip_pipe_buffer_size - len_out[i];
-			if (FD_ISSET(pipefd[thisidx][i][0], &rfds) && (max == 0) &&
-				(opt_verbose > 0))
-			{
-				std::cerr << "WARNING: outgoing buffer exceeded" << std::endl;
-			}
 			if (FD_ISSET(pipefd[thisidx][i][0], &rfds) && (max > 0))
 			{
 				ssize_t len = read(pipefd[thisidx][i][0],
@@ -2065,14 +2068,17 @@ int tcpip_io
 					continue;
 				}
 				else
+				{
 					len_out[i] += len;
+					if ((opt_verbose > 0) && ((tcpip_pipe_buffer_size -
+						len_out[i]) == 0))
+					{
+						std::cerr << "WARNING: outgoing buffer exceeded" <<
+							std::endl;
+					}
+				}
 			}
 			max = tcpip_pipe_buffer_size - broadcast_len_out[i];
-			if (FD_ISSET(broadcast_pipefd[thisidx][i][0], &rfds) &&
-				(max == 0) && (opt_verbose > 0))
-			{
-				std::cerr << "WARNING: outgoing buffer exceeded" << std::endl;
-			}
 			if (FD_ISSET(broadcast_pipefd[thisidx][i][0], &rfds) && (max > 0))
 			{
 				ssize_t len = read(broadcast_pipefd[thisidx][i][0],
@@ -2101,7 +2107,15 @@ int tcpip_io
 					continue;
 				}
 				else
+				{
 					broadcast_len_out[i] += len;
+					if ((opt_verbose > 0) && ((tcpip_pipe_buffer_size -
+						broadcast_len_out[i]) == 0))
+					{
+						std::cerr << "WARNING: outgoing buffer exceeded" <<
+							std::endl;
+					}
+				}
 			}
 		}
 		for (size_t i = 0; i < peers.size(); i++)

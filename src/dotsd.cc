@@ -160,7 +160,7 @@ void run_instance
 		mpz_init_set_ui(tmp, 0UL); // undefined
 		exec_sn_val.push_back(tmp);
 	}
-	// initialize algorithm "Randomized Binary Consensus" (5.12, 5.13) [CGR]
+	// initialize algorithm "Randomized Binary Consensus" (5.12, 5.13) [CGR06]
 	size_t consensus_round = 0, consensus_phase = 0;
 	size_t consensus_proposal = peers.size(); // undefined
 	size_t consensus_decision = peers.size(); // undefined
@@ -295,7 +295,7 @@ void run_instance
 						consensus_val_numbers[consensus_val[i]]++;
 				}
 			}
-			// Randomized Binary Consensus: phase 1 (algorithm 5.12 [CGR])
+			// Randomized Binary Consensus: phase 1 (algorithm 5.12 [CGR06])
 			if ((consensus_val_defined > (peers.size() / 2)) &&
 				(consensus_phase == 1) && (consensus_decision == peers.size()))
 			{
@@ -319,7 +319,7 @@ void run_instance
 				mpz_set_ui(msg, consensus_proposal + peers.size());
 				rbc->Broadcast(msg); // send CONSENSUS_DECIDE message
 			}
-			// Randomized Consensus: phase 2 (algorithm 5.13 [CGR])
+			// Randomized Consensus: phase 2 (algorithm 5.13 [CGR06])
 			if ((consensus_val_defined >= (peers.size() - T_RBC)) &&
 				(consensus_phase == 2) && (consensus_decision == peers.size()))
 			{
@@ -328,7 +328,7 @@ void run_instance
 					std::cerr << "INFO: Randomized Binary Consensus: #(val)" <<
 						" >= N - f && phase == 2" << std::endl;
 				}
-				consensus_phase = 3; // DEVIATION: "imaginary phase" [CGR] 
+				consensus_phase = 3; // DEVIATION: "imaginary phase" [CGR06] 
 				// As "common coin" we use the so-called "Independent Choice",
 				// however, in bad cases this results in an exponential number
 				// of consensus rounds for termination.
