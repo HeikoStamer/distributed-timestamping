@@ -127,7 +127,7 @@ void run_instance
 		bP_key.push_back(key.str());
 		ping[i] = 0; // initialize array for PING timestamps
 	}
-	// create asynchronous authenticated channels (chunked mode)
+	// create asynchronous authenticated channels (chunked mode) FIXME: not required?
 	aiounicast_select *aiou = new aiounicast_select(peers.size(), whoami,
 		uP_in, uP_out, uP_key, aiounicast::aio_scheduler_roundrobin,
 		(opt_W * 60), true, true, true);
@@ -141,11 +141,12 @@ void run_instance
 		myID += peers[i] + "|";
 	if (opt_verbose)
 		std::cerr << "RBC: myID = " << myID << std::endl;
-	// assume maximum asynchronous t-resilience for RBC
+	// assume maximum asynchronous t-resilience for RBC and create main channel
 	size_t T_RBC = (peers.size() - 1) / 3;
 	CachinKursawePetzoldShoupRBC *rbc = new CachinKursawePetzoldShoupRBC(
 			peers.size(), T_RBC, whoami,
-			aiou2, aiounicast::aio_scheduler_roundrobin, (opt_W * 60));
+			aiou2, aiounicast::aio_scheduler_roundrobin, (opt_W * 60),
+			10); // skip FIFO-ordering, if sequence counters diverge by 10
 	rbc->setID(myID);
 
 	// initialize main protocol
