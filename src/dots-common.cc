@@ -56,6 +56,17 @@ bool dots_http_request
 			perror("WARNING: dots_http_request (socket)");
 			continue; // try next address
 		}
+		int flags = fcntl(s, F_GETFL);
+		if (flags < 0)
+		{
+			perror("WARNING: dots_http_request (fcntl)");
+		}
+		else
+		{
+			flags |= O_NONBLOCK;
+			if (fcntl(s, F_SETFL) < 0)
+				perror("WARNING: dots_http_request (fcntl)");
+		}
 		if (connect(s, rp->ai_addr, rp->ai_addrlen) < 0)
 		{
 			if (errno != ECONNREFUSED)
