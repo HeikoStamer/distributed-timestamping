@@ -145,8 +145,7 @@ void run_instance
 	size_t T_RBC = (peers.size() - 1) / 3;
 	CachinKursawePetzoldShoupRBC *rbc = new CachinKursawePetzoldShoupRBC(
 			peers.size(), T_RBC, whoami,
-			aiou2, aiounicast::aio_scheduler_roundrobin, (opt_W * 60),
-			10); // skip FIFO-ordering, if sequence counters diverge by 10
+			aiou2, aiounicast::aio_scheduler_roundrobin, (opt_W * 60));
 	rbc->setID(myID);
 
 	// initialize main protocol
