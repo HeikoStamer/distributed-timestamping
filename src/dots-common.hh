@@ -81,12 +81,12 @@
 		(const std::string &in,
 		 const tmcg_openpgp_secure_string_t &passphrase,
 		 std::string &out,
-		 const tmcg_openpgp_byte_t count = 0xF0); // default S2K count
+		 const tmcg_openpgp_byte_t count = 0xF0); // puzzle's default S2K count
 	bool dots_encrypt_fuzzy_short
 		(const std::string &in,
 		 const tmcg_openpgp_secure_string_t &passphrase,
 		 std::string &out,
-		 const tmcg_openpgp_byte_t count = 0xFF); // default S2K count
+		 const tmcg_openpgp_byte_t count = 0xFF); // puzzle's default S2K count
 
 #endif
 
