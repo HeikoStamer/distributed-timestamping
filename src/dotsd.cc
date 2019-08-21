@@ -50,30 +50,34 @@ static const char *protocol = "DOTS-dotsd-0.0";
 #include "dots-common.hh"
 #include "dots-tcpip-common.hh"
 
-int 						pipefd[DOTS_MAX_N][DOTS_MAX_N][2];
-int							self_pipefd[2];
-int							broadcast_pipefd[DOTS_MAX_N][DOTS_MAX_N][2];
-int							broadcast_self_pipefd[2];
-pid_t 						pid[DOTS_MAX_N];
-time_t 						ping[DOTS_MAX_N];
-std::vector<std::string>	peers;
-bool						instance_forked = false;
-bool						signal_caught = false;
-bool						dkgpg_forked = false;
-pid_t						dkgpg_pid = 0;
-time_t						dkgpg_time = 0;
-char*						*dkgpg_env = NULL;
-std::string					dkgpg_cmd = DOTS_PATH_DKGPG;
-int							dkgpg_fd_in = -1, dkgpg_fd_out = -1, dkgpg_fd_err = -1;
+int                                pipefd[DOTS_MAX_N][DOTS_MAX_N][2];
+int                                self_pipefd[2];
+int                                broadcast_pipefd[DOTS_MAX_N][DOTS_MAX_N][2];
+int                                broadcast_self_pipefd[2];
+pid_t                              pid[DOTS_MAX_N];
+time_t                             ping[DOTS_MAX_N];
+std::vector<std::string>           peers;
+bool                               instance_forked = false;
+bool                               signal_caught = false;
+bool                               dkgpg_forked = false;
+pid_t                              dkgpg_pid = 0;
+time_t                             dkgpg_time = 0;
+char*                              *dkgpg_env = NULL;
+std::string                        dkgpg_cmd = DOTS_PATH_DKGPG;
+int                                dkgpg_fd_in = -1, dkgpg_fd_out = -1;
+int                                dkgpg_fd_err = -1;
 
-std::string					passwords, hostname, port, URI, policyfilename;
-std::stringstream			policyfile;
+std::string                        passwords, hostname, port, URI;
+std::string                        policyfilename;
+std::stringstream                  policyfile;
+std::map<std::string, std::string> map_passwords;
 
-int 						opt_verbose = 0;
-char						*opt_passwords = NULL;
-char						*opt_hostname = NULL;
-char						*opt_URI = NULL;
-unsigned long int			opt_p = 56000, opt_W = 5;
+
+int                                opt_verbose = 0;
+char                               *opt_passwords = NULL;
+char                               *opt_hostname = NULL;
+char                               *opt_URI = NULL;
+unsigned long int                  opt_p = 56000, opt_W = 5;
 
 void run_instance
 	(const size_t whoami)
@@ -83,56 +87,24 @@ void run_instance
 	// create communication handles between all players
 	std::vector<int> uP_in, uP_out, bP_in, bP_out;
 	std::vector<std::string> uP_key, bP_key;
-	std::map<std::string, std::string> map_passwords;
 	for (size_t i = 0; i < peers.size(); i++)
 	{
-		std::stringstream key;
-		if (opt_passwords != NULL)
-		{
-			std::string pwd;
-			if (!TMCG_ParseHelper::gs(passwords, '/', pwd))
-			{
-				std::cerr << "ERROR: P_" << whoami << ": " <<
-					"cannot read" << " password for protecting channel" <<
-					" to P_" << i << std::endl;
-				exit(-1);
-			}
-			key << pwd;
-			map_passwords[peers[i]] = pwd;
-			if (((i + 1) < peers.size()) &&
-				!TMCG_ParseHelper::nx(passwords, '/'))
-			{
-				std::cerr << "ERROR: P_" << whoami << ": " << "cannot" <<
-					" skip to next password for protecting channel to P_" <<
-					(i + 1) << std::endl;
-				exit(-1);
-			}
-		}
-		else
-		{
-			// simple key -- we assume that network provides secure channels
-			key << "dotsd::P_" << (i + whoami);
-		}
 		if (i == whoami)
 			uP_in.push_back(self_pipefd[0]);
 		else
 			uP_in.push_back(pipefd[i][whoami][0]);
 		uP_out.push_back(pipefd[whoami][i][1]);
-		uP_key.push_back(key.str());
+		uP_key.push_back(map_passwords[peers[i]]);
 		if (i == whoami)
 			bP_in.push_back(broadcast_self_pipefd[0]);
 		else
 			bP_in.push_back(broadcast_pipefd[i][whoami][0]);
 		bP_out.push_back(broadcast_pipefd[whoami][i][1]);
-		bP_key.push_back(key.str());
+		bP_key.push_back(map_passwords[peers[i]]);
 		ping[i] = 0; // initialize array for PING timestamps
 	}
-	// create asynchronous authenticated channels (chunked mode) FIXME: not required?
-	aiounicast_select *aiou = new aiounicast_select(peers.size(), whoami,
-		uP_in, uP_out, uP_key, aiounicast::aio_scheduler_roundrobin,
-		(opt_W * 60), true, true, true);
 	// create asynchronous authenticated channels for broadcast (chunked mode)
-	aiounicast_select *aiou2 = new aiounicast_select(peers.size(), whoami,
+	aiounicast_select *aiou = new aiounicast_select(peers.size(), whoami,
 		bP_in, bP_out, bP_key, aiounicast::aio_scheduler_roundrobin,
 		(opt_W * 60), true, true, true);
 	// create an instance of a reliable broadcast protocol (RBC)
@@ -145,7 +117,7 @@ void run_instance
 	size_t T_RBC = (peers.size() - 1) / 3;
 	CachinKursawePetzoldShoupRBC *rbc = new CachinKursawePetzoldShoupRBC(
 			peers.size(), T_RBC, whoami,
-			aiou2, aiounicast::aio_scheduler_roundrobin, (opt_W * 60));
+			aiou, aiounicast::aio_scheduler_roundrobin, (opt_W * 60));
 	rbc->setID(myID);
 
 	// initialize main protocol
@@ -578,11 +550,13 @@ void run_instance
 			if (trigger_decide && (consensus_decision < peers.size()))
 			{
 				trigger_decide = false;
-if ((leader_change && (consensus_decision == 0)) ||
-	(!leader_change && (consensus_decision == 1)))
-{
-std::cerr << "WARNING WARNING WARNING: diverging state detected" << std::endl;
-}
+				if ((leader_change && (consensus_decision == 0)) ||
+					(!leader_change && (consensus_decision == 1)))
+				{
+					std::cerr << "WARNING: diverging state detected" <<
+						" with leader_change = " << leader_change <<
+						std::endl;
+				}
 				decisions++;
 				leader += consensus_decision;
 				if (leader == peers.size())
@@ -685,24 +659,15 @@ std::cerr << "WARNING WARNING WARNING: diverging state detected" << std::endl;
 		mpz_clear(exec_sn_val[i]);
 		delete [] exec_sn_val[i];
 	}
-	// release RBC channel
+	// release RBC channel and P2P channels
 	delete rbc;
-	// release handles (unicast channel)
 	if (opt_verbose)
 	{
-		std::cerr << "INFO: P_" << whoami << ": unicast channels";
+		std::cerr << "INFO: P_" << whoami << ": P2P channels";
 		aiou->PrintStatistics(std::cerr);
 		std::cerr << std::endl;
 	}
-	// release handles (broadcast channel)
-	if (opt_verbose)
-	{
-		std::cerr << "INFO: P_" << whoami << ": broadcast channel";
-		aiou2->PrintStatistics(std::cerr);
-		std::cerr << std::endl;
-	}
-	// release asynchronous unicast and broadcast
-	delete aiou, delete aiou2;
+	delete aiou;
 }
 
 bool fork_instance
@@ -737,7 +702,7 @@ bool fork_instance
 int main
 	(int argc, char *const *argv, char **envp)
 {
-	static const char *usage = "dotsd [OPTIONS] -P PASSWORDS -H hostname PEERS";
+	static const char *usage = "dotsd [OPTIONS] -P <PASSWORDS> -H <hostname> <PEERS>";
 	dkgpg_env = envp;
 
 	// create peer list from remaining arguments
@@ -853,6 +818,12 @@ int main
 			usage << std::endl;
 		return -1;
 	}
+	if (passwords.length() == 0)
+	{
+		std::cerr << "ERROR: no option -P given; usage: " <<
+			usage << std::endl;
+		return -1;
+	}
 	if (port.length())
 		opt_p = strtoul(port.c_str(), NULL, 10); // set TCP start port
 	if ((opt_p < 1024) || (opt_p > 65535))
@@ -914,6 +885,31 @@ int main
 	{
 		std::cerr << "INFO: using LibTMCG version " << version_libTMCG() <<
 			std::endl;
+	}
+
+	// extract and map passwords
+	std::map<std::string, std::string> map_passwords;
+	for (size_t i = 0; i < peers.size(); i++)
+	{
+		std::stringstream key;
+		std::string pwd;
+		if (!TMCG_ParseHelper::gs(passwords, '/', pwd))
+		{
+			std::cerr << "ERROR: cannot read password" <<
+				" for protecting channel to P_" << i <<
+				std::endl;
+			return -1;
+		}
+		key << pwd;
+		map_passwords[peers[i]] = pwd;
+		if (((i + 1) < peers.size()) &&
+			!TMCG_ParseHelper::nx(passwords, '/'))
+		{
+			std::cerr << "ERROR: cannot skip to next password" <<
+				" for protecting channel to P_" << (i + 1) <<
+				std::endl;
+			return -1;
+		}
 	}
 	
 	// create underlying point-to-point channels over TCP/IP

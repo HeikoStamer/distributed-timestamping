@@ -29,13 +29,15 @@ extern int						pipefd[DOTS_MAX_N][DOTS_MAX_N][2];
 extern int						self_pipefd[2];
 extern int						broadcast_pipefd[DOTS_MAX_N][DOTS_MAX_N][2];
 extern int						broadcast_self_pipefd[2];
-extern pid_t					pid[DOTS_MAX_N];
+extern pid_t						pid[DOTS_MAX_N];
 extern std::vector<std::string>	peers;
 extern bool						instance_forked;
 extern bool						signal_caught;
 extern int						opt_verbose;
 extern bool						fork_instance(const size_t whoami);
-extern std::stringstream		policyfile;
+extern std::stringstream				policyfile;
+extern std::string					passwords;
+extern std::map<std::string, std::string>		map_passwords;
 
 static const size_t				tcpip_pipe_buffer_size = 262144;
 uint16_t						tcpip_start = 0;
@@ -868,7 +870,7 @@ void tcpip_bindports
 			tcpip_done();
 			exit(-1);
 		}
-		else if (listen(sockfd, SOMAXCONN) < 0) // FIXME: set queue size to 1 or 2
+		else if (listen(sockfd, SOMAXCONN) < 0)
 		{
 			perror("ERROR: tcpip_bindports (listen)");
 			if (close(sockfd) < 0)
@@ -1194,6 +1196,7 @@ void tcpip_accept
 					tcpip_done();
 					exit(-1);
 				}
+// TODO: send challenge, receive reply, and check auth
 				tcpip_pipe2socket_in[pi->first] = connfd;
 				char ipaddr[INET6_ADDRSTRLEN];
 				int ret;
@@ -1287,6 +1290,7 @@ bool tcpip_reaccept
 		perror("ERROR: tcpip_reaccept (accept)");
 		return false;
 	}
+// TODO: send challenge, receive reply, and check auth
 	if (broadcast)
 	{
 		if (tcpip_broadcast_pipe2socket_in.count(peer) > 0)
