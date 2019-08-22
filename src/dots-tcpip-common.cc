@@ -886,6 +886,306 @@ void tcpip_bindports
 	}
 }
 
+bool tcpip_connect_auth
+	(const size_t peer, const int fd)
+{
+	size_t maclen = gcry_mac_get_algo_maclen(TMCG_GCRY_MAC_ALGO);
+	if (maclen == 0)
+	{
+		std::cerr << "WARNING: TMCG_GCRY_MAC_ALGO not available" << std::endl;
+		return false;
+	}
+	unsigned char key[maclen];
+	unsigned char salt[maclen];
+	gcry_error_t err;
+	gcry_mac_hd_t mac_hd;
+	memset(salt, 80, sizeof(salt));
+	err = gcry_kdf_derive(map_passwords[peers[peer]].c_str(),
+		map_passwords[peers[peer]].length(),
+		GCRY_KDF_PBKDF2, TMCG_GCRY_MD_ALGO, salt, sizeof(salt),
+		25000, sizeof(key), key);
+	if (err)
+	{
+		std::cerr << "WARNING: gcry_kdf_derive() failed" <<
+			std::endl << gcry_strerror(err) << std::endl;
+		return false;
+	}
+	err = gcry_mac_open(&mac_hd, TMCG_GCRY_MAC_ALGO, 0, NULL); 				
+	if (err)
+	{
+		std::cerr << "WARNING: gcry_mac_open() failed" <<
+			std::endl << gcry_strerror(err) << std::endl;
+		return false;
+	}
+	err = gcry_mac_setkey(mac_hd, key, sizeof(key));
+	if (err)
+	{
+		std::cerr << "WARNING: gcry_mac_setkey() failed" <<
+			std::endl << gcry_strerror(err) << std::endl;
+		gcry_mac_close(mac_hd);
+		return false;
+	}
+	time_t timeout = 5; // timeout 5 sec
+	time_t entry_time = time(NULL);
+	unsigned char buf[maclen];
+	memset(buf, 0, sizeof(buf));
+	size_t realnum = 0;
+	do
+	{
+		// select(2) -- do everything with asynchronous I/O
+		fd_set rfds;
+		struct timeval tv;
+		int retval;
+		FD_ZERO(&rfds);
+		FD_SET(fd, &rfds);
+		tv.tv_sec = 0;
+		tv.tv_usec = 1000; // sleep only for 1000us = 1ms
+		retval = select((fd + 1), &rfds, NULL, NULL, &tv);
+		if (retval < 0)
+		{
+			if (errno == EINTR)
+			{
+				continue;
+			}
+			else
+			{
+				perror("WARNING: tcpip_connect_auth (select)");
+				gcry_mac_close(mac_hd);
+				return false;
+			}
+		}
+		if (retval == 0)
+			continue;
+		// read(2) -- ready for non-blocking read?
+		if (FD_ISSET(fd, &rfds))
+		{
+			ssize_t num = read(fd, buf, sizeof(buf) - realnum);
+			if (num < 0)
+			{
+				if ((errno == EAGAIN) || (errno == EWOULDBLOCK) ||
+					(errno == EINTR))
+				{
+					if (errno == EAGAIN)
+						perror("WARNING: tcpip_connect_auth (read)");
+					continue;
+				}
+				else
+				{
+					perror("ERROR: tcpip_connect_auth (read)");
+					gcry_mac_close(mac_hd);
+					return false;
+				}
+			}
+			else
+				realnum += num;
+		}
+	}
+	while ((realnum < sizeof(buf)) && (time(NULL) < (entry_time + timeout)));
+	unsigned char mac[maclen];
+	memset(mac, 0, sizeof(mac));
+	realnum = 0;
+	do
+	{
+		// select(2) -- do everything with asynchronous I/O
+		fd_set rfds;
+		struct timeval tv;
+		int retval;
+		FD_ZERO(&rfds);
+		FD_SET(fd, &rfds);
+		tv.tv_sec = 0;
+		tv.tv_usec = 1000; // sleep only for 1000us = 1ms
+		retval = select((fd + 1), &rfds, NULL, NULL, &tv);
+		if (retval < 0)
+		{
+			if (errno == EINTR)
+			{
+				continue;
+			}
+			else
+			{
+				perror("WARNING: tcpip_connect_auth (select)");
+				gcry_mac_close(mac_hd);
+				return false;
+			}
+		}
+		if (retval == 0)
+			continue;
+		// read(2) -- ready for non-blocking read?
+		if (FD_ISSET(fd, &rfds))
+		{
+			ssize_t num = read(fd, mac, sizeof(mac) - realnum);
+			if (num < 0)
+			{
+				if ((errno == EAGAIN) || (errno == EWOULDBLOCK) ||
+					(errno == EINTR))
+				{
+					if (errno == EAGAIN)
+						perror("WARNING: tcpip_connect_auth (read)");
+					continue;
+				}
+				else
+				{
+					perror("ERROR: tcpip_connect_auth (read)");
+					gcry_mac_close(mac_hd);
+					return false;
+				}
+			}
+			else
+				realnum += num;
+		}
+	}
+	while ((realnum < sizeof(mac)) && (time(NULL) < (entry_time + timeout)));
+	err = gcry_mac_write(mac_hd, buf, sizeof(buf));
+	if (err)
+	{
+		std::cerr << "WARNING: gcry_mac_write() failed" <<
+			std::endl << gcry_strerror(err) << std::endl;
+		gcry_mac_close(mac_hd);
+		return false;
+	}
+	err = gcry_mac_verify(mac_hd, mac, sizeof(mac));
+	if (err)
+	{
+		std::cerr << "WARNING: gcry_mac_verify() failed" <<
+			std::endl << gcry_strerror(err) << std::endl;
+		gcry_mac_close(mac_hd);
+		return false;
+	}
+	for (size_t i = 0; i < sizeof(buf); i++)
+		buf[i] ^= 0x80; // modify the auth value
+	realnum = 0;
+	do
+	{
+		// select(2) -- do everything with asynchronous I/O
+		fd_set wfds;
+		struct timeval tv;
+		int retval;
+		FD_ZERO(&wfds);
+		FD_SET(fd, &wfds);
+		tv.tv_sec = 0;
+		tv.tv_usec = 1000; // sleep only for 1000us = 1ms
+		retval = select((fd + 1), NULL, &wfds, NULL, &tv);
+		if (retval < 0)
+		{
+			if (errno == EINTR)
+			{
+				continue;
+			}
+			else
+			{
+				perror("WARNING: tcpip_connect_auth (select)");
+				gcry_mac_close(mac_hd);
+				return false;
+			}
+		}
+		if (retval == 0)
+			continue;
+		// write(2) -- ready for non-blocking write?
+		if (FD_ISSET(fd, &wfds))
+		{
+			ssize_t num = write(fd, buf, sizeof(buf) - realnum);
+			if (num < 0)
+			{
+				if ((errno == EAGAIN) || (errno == EWOULDBLOCK) ||
+					(errno == EINTR))
+				{
+					if (errno == EAGAIN)
+						perror("WARNING: tcpip_connect_auth (write)");
+					continue;
+				}
+				else
+				{
+					perror("WARNING: tcpip_connect_auth (write)");
+					gcry_mac_close(mac_hd);
+					return false;
+				}
+			}
+			else
+				realnum += num;
+		}
+	}
+	while ((realnum < sizeof(buf)) && (time(NULL) < (entry_time + timeout)));
+	err = gcry_mac_reset(mac_hd);
+	if (err)
+	{
+		std::cerr << "ERROR: gcry_mac_reset() failed" <<
+			std::endl << gcry_strerror(err) << std::endl;
+		gcry_mac_close(mac_hd);
+		return false;
+	}
+	err = gcry_mac_write(mac_hd, buf, sizeof(buf));
+	if (err)
+	{
+		std::cerr << "WARNING: gcry_mac_write() failed" <<
+			std::endl << gcry_strerror(err) << std::endl;
+		gcry_mac_close(mac_hd);
+		return false;
+	}
+	size_t macnum = maclen;
+	err = gcry_mac_read(mac_hd, mac, &macnum);
+	if (err || (macnum != maclen))
+	{
+		std::cerr << "WARNING: gcry_mac_read() failed" <<
+			std::endl << gcry_strerror(err) << std::endl;
+		gcry_mac_close(mac_hd);
+		return false;
+	}
+	realnum = 0;
+	do
+	{
+		// select(2) -- do everything with asynchronous I/O
+		fd_set wfds;
+		struct timeval tv;
+		int retval;
+		FD_ZERO(&wfds);
+		FD_SET(fd, &wfds);
+		tv.tv_sec = 0;
+		tv.tv_usec = 1000; // sleep only for 1000us = 1ms
+		retval = select((fd + 1), NULL, &wfds, NULL, &tv);
+		if (retval < 0)
+		{
+			if (errno == EINTR)
+			{
+				continue;
+			}
+			else
+			{
+				perror("WARNING: tcpip_connect_auth (select)");
+				gcry_mac_close(mac_hd);
+				return false;
+			}
+		}
+		if (retval == 0)
+			continue;
+		// write(2) -- ready for non-blocking write?
+		if (FD_ISSET(fd, &wfds))
+		{
+			ssize_t num = write(fd, mac, sizeof(mac) - realnum);
+			if (num < 0)
+			{
+				if ((errno == EAGAIN) || (errno == EWOULDBLOCK) ||
+					(errno == EINTR))
+				{
+					if (errno == EAGAIN)
+						perror("WARNING: tcpip_connect_auth (write)");
+					continue;
+				}
+				else
+				{
+					perror("ERROR: tcpip_connect_auth (write)");
+					gcry_mac_close(mac_hd);
+					return false;
+				}
+			}
+			else
+				realnum += num;
+		}
+	}
+	while ((realnum < sizeof(mac)) && (time(NULL) < (entry_time + timeout)));
+	gcry_mac_close(mac_hd);
+	return true;
+}
+
 size_t tcpip_connect
 	(const uint16_t start, const bool broadcast)
 {
@@ -982,15 +1282,24 @@ size_t tcpip_connect
 						std::cerr << "INFO: resolved hostname \"" <<
 							peers[i] << "\" to address " << hbuf << std::endl;
 					}
-					if (opt_verbose)
+					if (tcpip_connect_auth(i, sockfd))
 					{
-						std::cerr << "INFO: connected to host \"" <<
-							peers[i] << "\" on port " << port << std::endl;
+						if (opt_verbose)
+						{
+							std::cerr << "INFO: connected to host \"" <<
+								peers[i] << "\" on port " << port << std::endl;
+						}
+						if (broadcast)
+							tcpip_broadcast_pipe2socket_out[i] = sockfd;
+						else
+							tcpip_pipe2socket_out[i] = sockfd;
 					}
-					if (broadcast)
-						tcpip_broadcast_pipe2socket_out[i] = sockfd;
 					else
-						tcpip_pipe2socket_out[i] = sockfd;
+					{
+						std::cerr << "WARNING: connect to host \"" <<
+								peers[i] << "\" on port " << port <<
+								" failed" << std::endl;
+					}
 					break; // on success: leave the loop
 				}
 			}
@@ -1090,22 +1399,339 @@ bool tcpip_reconnect
 					std::cerr << "INFO: resolved hostname \"" << peers[peer] <<
 						"\" to address " << hbuf << std::endl;
 				}
-				if (opt_verbose)
+				if (tcpip_connect_auth(peer, sockfd))
 				{
-					std::cerr << "INFO: connected to host \"" << peers[peer] <<
-						"\" on port " << port << std::endl;
+					if (opt_verbose)
+					{
+						std::cerr << "INFO: connected to host \"" <<
+							peers[peer] << "\" on port " << port << std::endl;
+					}
+					if (broadcast)
+						tcpip_broadcast_pipe2socket_out[peer] = sockfd;
+					else
+						tcpip_pipe2socket_out[peer] = sockfd;
+					freeaddrinfo(res);
+					return true;
 				}
-				if (broadcast)
-					tcpip_broadcast_pipe2socket_out[peer] = sockfd;
 				else
-					tcpip_pipe2socket_out[peer] = sockfd;
-				freeaddrinfo(res);
-				return true;
+				{
+					std::cerr << "WARNING: connect to host \"" << peers[peer] <<
+						"\" on port " << port << " failed" << std::endl;
+				}
+				break; // on success: leave the loop
 			}
 		}
 		freeaddrinfo(res);
 	}
 	return false;
+}
+
+bool tcpip_accept_auth
+	(const size_t peer, const int fd)
+{
+	size_t maclen = gcry_mac_get_algo_maclen(TMCG_GCRY_MAC_ALGO);
+	if (maclen == 0)
+	{
+		std::cerr << "WARNING: TMCG_GCRY_MAC_ALGO not available" << std::endl;
+		return false;
+	}
+	unsigned char key[maclen];
+	unsigned char salt[maclen];
+	unsigned char auth[maclen];
+	gcry_error_t err;
+	gcry_mac_hd_t mac_hd;
+	memset(salt, 80, sizeof(salt));
+	gcry_randomize(auth, sizeof(auth), GCRY_STRONG_RANDOM);
+	err = gcry_kdf_derive(map_passwords[peers[peer]].c_str(),
+		map_passwords[peers[peer]].length(),
+		GCRY_KDF_PBKDF2, TMCG_GCRY_MD_ALGO, salt, sizeof(salt),
+		25000, sizeof(key), key);
+	if (err)
+	{
+		std::cerr << "WARNING: gcry_kdf_derive() failed" <<
+			std::endl << gcry_strerror(err) << std::endl;
+		return false;
+	}
+	err = gcry_mac_open(&mac_hd, TMCG_GCRY_MAC_ALGO, 0, NULL); 				
+	if (err)
+	{
+		std::cerr << "WARNING: gcry_mac_open() failed" <<
+			std::endl << gcry_strerror(err) << std::endl;
+		return false;
+	}
+	err = gcry_mac_setkey(mac_hd, key, sizeof(key));
+	if (err)
+	{
+		std::cerr << "WARNING: gcry_mac_setkey() failed" <<
+			std::endl << gcry_strerror(err) << std::endl;
+		gcry_mac_close(mac_hd);
+		return false;
+	}
+	err = gcry_mac_write(mac_hd, auth, sizeof(auth));
+	if (err)
+	{
+		std::cerr << "WARNING: gcry_mac_write() failed" <<
+			std::endl << gcry_strerror(err) << std::endl;
+		gcry_mac_close(mac_hd);
+		return false;
+	}
+	unsigned char mac[maclen];
+	memset(mac, 0, sizeof(mac));
+	size_t macnum = maclen;
+	err = gcry_mac_read(mac_hd, mac, &macnum);
+	if (err || (macnum != maclen))
+	{
+		std::cerr << "WARNING: gcry_mac_read() failed" <<
+			std::endl << gcry_strerror(err) << std::endl;
+		gcry_mac_close(mac_hd);
+		return false;
+	}
+	time_t timeout = 5; // timeout 5 sec
+	time_t entry_time = time(NULL);
+	size_t realnum = 0;
+	do
+	{
+		// select(2) -- do everything with asynchronous I/O
+		fd_set wfds;
+		struct timeval tv;
+		int retval;
+		FD_ZERO(&wfds);
+		FD_SET(fd, &wfds);
+		tv.tv_sec = 0;
+		tv.tv_usec = 1000; // sleep only for 1000us = 1ms
+		retval = select((fd + 1), NULL, &wfds, NULL, &tv);
+		if (retval < 0)
+		{
+			if (errno == EINTR)
+			{
+				continue;
+			}
+			else
+			{
+				perror("WARNING: tcpip_accept_auth (select)");
+				gcry_mac_close(mac_hd);
+				return false;
+			}
+		}
+		if (retval == 0)
+			continue;
+		// write(2) -- ready for non-blocking write?
+		if (FD_ISSET(fd, &wfds))
+		{
+			ssize_t num = write(fd, auth, sizeof(auth) - realnum);
+			if (num < 0)
+			{
+				if ((errno == EAGAIN) || (errno == EWOULDBLOCK) ||
+					(errno == EINTR))
+				{
+					if (errno == EAGAIN)
+						perror("WARNING: tcpip_accept_auth (write)");
+					continue;
+				}
+				else
+				{
+					perror("WARNING: tcpip_accept_auth (write)");
+					gcry_mac_close(mac_hd);
+					return false;
+				}
+			}
+			else
+				realnum += num;
+		}
+	}
+	while ((realnum < sizeof(auth)) && (time(NULL) < (entry_time + timeout)));
+	realnum = 0;
+	do
+	{
+		// select(2) -- do everything with asynchronous I/O
+		fd_set wfds;
+		struct timeval tv;
+		int retval;
+		FD_ZERO(&wfds);
+		FD_SET(fd, &wfds);
+		tv.tv_sec = 0;
+		tv.tv_usec = 1000; // sleep only for 1000us = 1ms
+		retval = select((fd + 1), NULL, &wfds, NULL, &tv);
+		if (retval < 0)
+		{
+			if (errno == EINTR)
+			{
+				continue;
+			}
+			else
+			{
+				perror("WARNING: tcpip_accept_auth (select)");
+				gcry_mac_close(mac_hd);
+				return false;
+			}
+		}
+		if (retval == 0)
+			continue;
+		// write(2) -- ready for non-blocking write?
+		if (FD_ISSET(fd, &wfds))
+		{
+			ssize_t num = write(fd, mac, sizeof(mac) - realnum);
+			if (num < 0)
+			{
+				if ((errno == EAGAIN) || (errno == EWOULDBLOCK) ||
+					(errno == EINTR))
+				{
+					if (errno == EAGAIN)
+						perror("WARNING: tcpip_accept_auth (write)");
+					continue;
+				}
+				else
+				{
+					perror("ERROR: tcpip_accept_auth (write)");
+					gcry_mac_close(mac_hd);
+					return false;
+				}
+			}
+			else
+				realnum += num;
+		}
+	}
+	while ((realnum < sizeof(mac)) && (time(NULL) < (entry_time + timeout)));
+	unsigned char buf[maclen];
+	memset(buf, 0, sizeof(buf));
+	realnum = 0;
+	do
+	{
+		// select(2) -- do everything with asynchronous I/O
+		fd_set rfds;
+		struct timeval tv;
+		int retval;
+		FD_ZERO(&rfds);
+		FD_SET(fd, &rfds);
+		tv.tv_sec = 0;
+		tv.tv_usec = 1000; // sleep only for 1000us = 1ms
+		retval = select((fd + 1), &rfds, NULL, NULL, &tv);
+		if (retval < 0)
+		{
+			if (errno == EINTR)
+			{
+				continue;
+			}
+			else
+			{
+				perror("WARNING: tcpip_accept_auth (select)");
+				gcry_mac_close(mac_hd);
+				return false;
+			}
+		}
+		if (retval == 0)
+			continue;
+		// read(2) -- ready for non-blocking read?
+		if (FD_ISSET(fd, &rfds))
+		{
+			ssize_t num = read(fd, buf, sizeof(buf) - realnum);
+			if (num < 0)
+			{
+				if ((errno == EAGAIN) || (errno == EWOULDBLOCK) ||
+					(errno == EINTR))
+				{
+					if (errno == EAGAIN)
+						perror("WARNING: tcpip_accept_auth (read)");
+					continue;
+				}
+				else
+				{
+					perror("ERROR: tcpip_accept_auth (read)");
+					gcry_mac_close(mac_hd);
+					return false;
+				}
+			}
+			else
+				realnum += num;
+		}
+	}
+	while ((realnum < sizeof(buf)) && (time(NULL) < (entry_time + timeout)));
+	memset(mac, 0, sizeof(mac));
+	realnum = 0;
+	do
+	{
+		// select(2) -- do everything with asynchronous I/O
+		fd_set rfds;
+		struct timeval tv;
+		int retval;
+		FD_ZERO(&rfds);
+		FD_SET(fd, &rfds);
+		tv.tv_sec = 0;
+		tv.tv_usec = 1000; // sleep only for 1000us = 1ms
+		retval = select((fd + 1), &rfds, NULL, NULL, &tv);
+		if (retval < 0)
+		{
+			if (errno == EINTR)
+			{
+				continue;
+			}
+			else
+			{
+				perror("WARNING: tcpip_accept_auth (select)");
+				gcry_mac_close(mac_hd);
+				return false;
+			}
+		}
+		if (retval == 0)
+			continue;
+		// read(2) -- ready for non-blocking read?
+		if (FD_ISSET(fd, &rfds))
+		{
+			ssize_t num = read(fd, mac, sizeof(mac) - realnum);
+			if (num < 0)
+			{
+				if ((errno == EAGAIN) || (errno == EWOULDBLOCK) ||
+					(errno == EINTR))
+				{
+					if (errno == EAGAIN)
+						perror("WARNING: tcpip_accept_auth (read)");
+					continue;
+				}
+				else
+				{
+					perror("ERROR: tcpip_accept_auth (read)");
+					gcry_mac_close(mac_hd);
+					return false;
+				}
+			}
+			else
+				realnum += num;
+		}
+	}
+	while ((realnum < sizeof(mac)) && (time(NULL) < (entry_time + timeout)));
+	err = gcry_mac_reset(mac_hd);
+	if (err)
+	{
+		std::cerr << "ERROR: gcry_mac_reset() failed" <<
+			std::endl << gcry_strerror(err) << std::endl;
+		gcry_mac_close(mac_hd);
+		return false;
+	}
+	err = gcry_mac_write(mac_hd, buf, sizeof(buf));
+	if (err)
+	{
+		std::cerr << "WARNING: gcry_mac_write() failed" <<
+			std::endl << gcry_strerror(err) << std::endl;
+		gcry_mac_close(mac_hd);
+		return false;
+	}
+	err = gcry_mac_verify(mac_hd, mac, sizeof(mac));
+	if (err)
+	{
+		std::cerr << "WARNING: gcry_mac_verify() failed" <<
+			std::endl << gcry_strerror(err) << std::endl;
+		gcry_mac_close(mac_hd);
+		return false;
+	}
+	gcry_mac_close(mac_hd);
+	for (size_t i = 0; i < sizeof(buf); i++)
+		buf[i] ^= 0x80; // modify the received value
+	if (memcmp(auth, buf, maclen))
+	{
+		std::cerr << "WARNING: authentication failed" << std::endl;
+		return false;
+	}
+	return true;
 }
 
 void tcpip_accept
@@ -1134,7 +1760,7 @@ void tcpip_accept
 			}
 			else
 			{
-				std::cerr << "ERROR: file descriptor value of internal pipe" <<
+				std::cerr << "ERROR: file descriptor value of listening socket" <<
 					" exceeds FD_SETSIZE" << std::endl;
 				tcpip_close();
 				tcpip_done();
@@ -1152,7 +1778,7 @@ void tcpip_accept
 			}
 			else
 			{
-				std::cerr << "ERROR: file descriptor value of internal pipe" <<
+				std::cerr << "ERROR: file descriptor value of listening socket" <<
 					" exceeds FD_SETSIZE" << std::endl;
 				tcpip_close();
 				tcpip_done();
@@ -1196,8 +1822,6 @@ void tcpip_accept
 					tcpip_done();
 					exit(-1);
 				}
-// TODO: send challenge, receive reply, and check auth
-				tcpip_pipe2socket_in[pi->first] = connfd;
 				char ipaddr[INET6_ADDRSTRLEN];
 				int ret;
 				if ((ret = getnameinfo((struct sockaddr *)&sin, slen,
@@ -1213,10 +1837,21 @@ void tcpip_accept
 					tcpip_done();
 					exit(-1);
 				}
-				if (opt_verbose)
+				if (tcpip_accept_auth(pi->first, connfd))
 				{
-					std::cerr << "INFO: accept connection for P_" <<
-						pi->first << " from address " << ipaddr << std::endl;
+					tcpip_pipe2socket_in[pi->first] = connfd;
+					if (opt_verbose)
+					{
+						std::cerr << "INFO: accept connection for P_" <<
+							pi->first << " from address " << ipaddr << std::endl;
+					}
+				}
+				else
+				{
+					close(connfd);
+					std::cerr << "WARNING: accept connection for P_" <<
+						pi->first << " from address " << ipaddr <<
+						" failed " << std::endl;
 				}
 			}
 		}
@@ -1236,7 +1871,6 @@ void tcpip_accept
 					tcpip_done();
 					exit(-1);
 				}
-				tcpip_broadcast_pipe2socket_in[pi->first] = connfd;
 				char ipaddr[INET6_ADDRSTRLEN];
 				int ret;
 				if ((ret = getnameinfo((struct sockaddr *)&sin, slen,
@@ -1252,11 +1886,22 @@ void tcpip_accept
 					tcpip_done();
 					exit(-1);
 				}
-				if (opt_verbose)
+				if (tcpip_accept_auth(pi->first, connfd))
 				{
-					std::cerr << "INFO: accept broadcast connection for" <<
+					tcpip_broadcast_pipe2socket_in[pi->first] = connfd;
+					if (opt_verbose)
+					{
+						std::cerr << "INFO: accept broadcast connection for" <<
+							" P_" << pi->first << " from address " << 
+							ipaddr << std::endl;
+					}
+				}
+				else
+				{
+					close(connfd);
+					std::cerr << "WARNING: accept broadcast connection for" <<
 						" P_" << pi->first << " from address " << 
-						ipaddr << std::endl;
+						ipaddr << " failed" << std::endl;
 				}
 			}
 		}
@@ -1290,27 +1935,6 @@ bool tcpip_reaccept
 		perror("ERROR: tcpip_reaccept (accept)");
 		return false;
 	}
-// TODO: send challenge, receive reply, and check auth
-	if (broadcast)
-	{
-		if (tcpip_broadcast_pipe2socket_in.count(peer) > 0)
-		{
-			if (close(tcpip_broadcast_pipe2socket_in[peer]) < 0)
-				perror("ERROR: tcpip_reaccept (close)");
-			tcpip_broadcast_pipe2socket_in.erase(peer);
-		}
-		tcpip_broadcast_pipe2socket_in[peer] = connfd;
-	}
-	else
-	{
-		if (tcpip_pipe2socket_in.count(peer) > 0)
-		{
-			if (close(tcpip_pipe2socket_in[peer]) < 0)
-				perror("ERROR: tcpip_reaccept (close)");
-			tcpip_pipe2socket_in.erase(peer);
-		}
-		tcpip_pipe2socket_in[peer] = connfd;
-	}
 	char ipaddr[INET6_ADDRSTRLEN];
 	int ret;
 	if ((ret = getnameinfo((struct sockaddr *)&sin, slen,
@@ -1322,15 +1946,45 @@ bool tcpip_reaccept
 		else
 			std::cerr << gai_strerror(ret);
 		std::cerr << std::endl;
+	}
+	if (tcpip_accept_auth(peer, connfd))
+	{
+		if (broadcast)
+		{
+			if (tcpip_broadcast_pipe2socket_in.count(peer) > 0)
+			{
+				if (close(tcpip_broadcast_pipe2socket_in[peer]) < 0)
+					perror("WARNING: tcpip_reaccept (close)");
+				tcpip_broadcast_pipe2socket_in.erase(peer);
+			}
+			tcpip_broadcast_pipe2socket_in[peer] = connfd;
+		}
+		else
+		{
+			if (tcpip_pipe2socket_in.count(peer) > 0)
+			{
+				if (close(tcpip_pipe2socket_in[peer]) < 0)
+					perror("WARNING: tcpip_reaccept (close)");
+				tcpip_pipe2socket_in.erase(peer);
+			}
+			tcpip_pipe2socket_in[peer] = connfd;
+		}
+		if (opt_verbose)
+		{
+			std::cerr << "INFO: accept " << (broadcast ? "broadcast" : "") <<
+				" connection for P_" << peer << " from address " << ipaddr <<
+				std::endl;
+		}
 		return true;
 	}
-	if (opt_verbose)
+	else
 	{
-		std::cerr << "INFO: accept " << (broadcast ? "broadcast" : "") <<
+		close(connfd);
+		std::cerr << "WARNING: accept " << (broadcast ? "broadcast" : "") <<
 			" connection for P_" << peer << " from address " << ipaddr <<
-			std::endl;
+			" failed" << std::endl;
+		return false;
 	}
-	return true;
 }
 
 bool tcpip_fork
@@ -1602,11 +2256,11 @@ int tcpip_io
 		FD_ZERO(&wfds);
 		for (size_t i = 0; i < peers.size(); i++)
 		{
-			int fd = tcpip_pipe2socket[i]; // listen socket
+			int fd = tcpip_pipe2socket[i]; // listening socket
 			FD_SET(fd, &rfds);
 			if (fd > maxfd)
 				maxfd = fd;
-			fd = tcpip_broadcast_pipe2socket[i]; // listen socket
+			fd = tcpip_broadcast_pipe2socket[i]; // listening socket
 			FD_SET(fd, &rfds);
 			if (fd > maxfd)
 				maxfd = fd;
@@ -1622,8 +2276,8 @@ int tcpip_io
 			}
 			else
 			{
-				std::cerr << "ERROR: file descriptor value of internal" <<
-					" pipe exceeds FD_SETSIZE" << std::endl;
+				std::cerr << "ERROR: file descriptor value of incoming" <<
+					" socket exceeds FD_SETSIZE" << std::endl;
 				return -201;
 			}
 		}
@@ -1638,8 +2292,8 @@ int tcpip_io
 			}
 			else
 			{
-				std::cerr << "ERROR: file descriptor value of internal" <<
-					" pipe exceeds FD_SETSIZE" << std::endl;
+				std::cerr << "ERROR: file descriptor value of incoming" <<
+					" socket exceeds FD_SETSIZE" << std::endl;
 				return -201;
 			}
 		}
@@ -1657,8 +2311,8 @@ int tcpip_io
 			}
 			else
 			{
-				std::cerr << "ERROR: file descriptor value of internal" <<
-					" pipe exceeds FD_SETSIZE" << std::endl;
+				std::cerr << "ERROR: file descriptor value of outgoing" <<
+					" socket exceeds FD_SETSIZE" << std::endl;
 				return -201;
 			}
 		}
@@ -1676,8 +2330,8 @@ int tcpip_io
 			}
 			else
 			{
-				std::cerr << "ERROR: file descriptor value of internal" <<
-					" pipe exceeds FD_SETSIZE" << std::endl;
+				std::cerr << "ERROR: file descriptor value of outgoing" <<
+					" socket exceeds FD_SETSIZE" << std::endl;
 				return -201;
 			}
 		}

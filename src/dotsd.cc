@@ -85,16 +85,10 @@ void run_instance
 	std::vector<std::string> active_peers;
 	active_peers.insert(active_peers.end(), peers.begin(), peers.end());
 	// create communication handles between all players
-	std::vector<int> uP_in, uP_out, bP_in, bP_out;
-	std::vector<std::string> uP_key, bP_key;
+	std::vector<int> bP_in, bP_out;
+	std::vector<std::string> bP_key;
 	for (size_t i = 0; i < peers.size(); i++)
 	{
-		if (i == whoami)
-			uP_in.push_back(self_pipefd[0]);
-		else
-			uP_in.push_back(pipefd[i][whoami][0]);
-		uP_out.push_back(pipefd[whoami][i][1]);
-		uP_key.push_back(map_passwords[peers[i]]);
 		if (i == whoami)
 			bP_in.push_back(broadcast_self_pipefd[0]);
 		else
