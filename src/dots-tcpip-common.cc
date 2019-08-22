@@ -1990,20 +1990,11 @@ bool tcpip_reaccept
 bool tcpip_fork
 	()
 {
-	if ((tcpip_pipe2socket_in.size() == peers.size()) &&
-		(tcpip_broadcast_pipe2socket_in.size() == peers.size()))
-	{
-		// fork instance
-		if (opt_verbose)
-			std::cerr << "INFO: forking the protocol instance ..." << std::endl;
-		if (!fork_instance(tcpip_peer2pipe[tcpip_thispeer]))
-			return false;
-	}
-	else
-	{
-		std::cerr << "ERROR: not enough connections established" << std::endl;
+	// fork instance
+	if (opt_verbose)
+		std::cerr << "INFO: forking the protocol instance ..." << std::endl;
+	if (!fork_instance(tcpip_peer2pipe[tcpip_thispeer]))
 		return false;
-	}
 	return true;
 }
 
@@ -2181,6 +2172,14 @@ int tcpip_io
 	std::map<size_t, time_t> reconnects_ttl;
 	std::vector<size_t> broadcast_reconnects;
 	std::map<size_t, time_t> broadcast_reconnects_ttl;
+	for (size_t i = 0; i < peers.size(); i++)
+	{
+		// initially connect to all parties
+		reconnects.push_back(i);
+		reconnects_ttl[i] = time(NULL);
+		broadcast_reconnects.push_back(i);
+		broadcast_reconnects_ttl[i] = time(NULL);
+	}
 	while (!signal_caught)
 	{
 		// do some other work beside I/O
@@ -2453,6 +2452,7 @@ int tcpip_io
 			int fd = tcpip_pipe2socket[i];
 			if (FD_ISSET(fd, &rfds))
 			{
+//FIXME: divide tcpip_reaccept() into accept and two auth phases: (pending, finished)
 				if (tcpip_reaccept(i, false))
 				{
 					if (opt_verbose)

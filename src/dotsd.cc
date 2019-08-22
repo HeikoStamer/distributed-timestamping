@@ -911,11 +911,6 @@ int main
 	tcpip_init(hostname);
 	tcpip_bindports((uint16_t)opt_p, false);
 	tcpip_bindports((uint16_t)opt_p, true);
-	while (tcpip_connect((uint16_t)opt_p, false) < peers.size())
-		sleep(1);
-	while (tcpip_connect((uint16_t)opt_p, true) < peers.size())
-		sleep(1);
-	tcpip_accept();
 // TODO: detach from terminal, redirect stdout and stderr, and daemonize itself
 	if (tcpip_fork())
 		ret = tcpip_io();
