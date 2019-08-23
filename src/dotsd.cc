@@ -106,7 +106,7 @@ void run_instance
 	for (size_t i = 0; i < peers.size(); i++)
 		myID += peers[i] + "|";
 	if (opt_verbose)
-		std::cerr << "RBC: myID = " << myID << std::endl;
+		std::cerr << "INFO: RBC myID = " << myID << std::endl;
 	// assume maximum asynchronous t-resilience for RBC and create main channel
 	size_t T_RBC = (peers.size() - 1) / 3;
 	CachinKursawePetzoldShoupRBC *rbc = new CachinKursawePetzoldShoupRBC(
