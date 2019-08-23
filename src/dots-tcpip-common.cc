@@ -1662,7 +1662,8 @@ int tcpip_io
 				auth_broadcast_ttl_in[who] = 0;
 				auth_broadcast_len_in[who] = 0;
 				auth_broadcast_sent[who] = false;
-				tcpip_broadcast_pipe2socket_in[who] = tcpip_broadcast_pipe2socket_in_auth[who];
+				tcpip_broadcast_pipe2socket_in[who] =
+					tcpip_broadcast_pipe2socket_in_auth[who];
 				tcpip_broadcast_pipe2socket_in_auth.erase(who);
 			}
 			else
@@ -1964,7 +1965,7 @@ int tcpip_io
 			return -201;
 		}
 		struct timeval tv;
-		tv.tv_sec = 1; // FIXME: maybe this is to much and should be around 100 ms
+		tv.tv_sec = 1; // FIXME: maybe this is too long (should be around 100 ms)
 		tv.tv_usec = 0;
 		int retval = select((maxfd + 1), &rfds, &wfds, NULL, &tv);
 		if (retval < 0)
@@ -2095,9 +2096,12 @@ int tcpip_io
 					}
 					if (tcpip_pipe2socket_in.count(pi->first) > 0)
 					{
+						// close and cleanup previous connection
 						if (close(tcpip_pipe2socket_in[pi->first]) < 0)
 							perror("WARNING: tcpip_accept (close)");
 						tcpip_pipe2socket_in.erase(pi->first);
+						len_in[pi->first] = 0; // discard buffer
+// FIXME: cleanup other stuff
 					}
 					auth_finished_in.push_back(pi->first);
 				}
@@ -2129,8 +2133,8 @@ int tcpip_io
 			size_t max = (2 * maclen) - auth_broadcast_len_in[pi->first];
 			if (FD_ISSET(pi->second, &rfds) && (max > 0))
 			{
-				ssize_t len = read(pi->second,
-					auth_broadcast_buf_in[pi->first] + auth_broadcast_len_in[pi->first], max);
+				ssize_t len = read(pi->second, auth_broadcast_buf_in[pi->first]
+					+ auth_broadcast_len_in[pi->first], max);
 				if (len < 0)
 				{
 					if ((errno == EWOULDBLOCK) || (errno == EINTR))
@@ -2171,9 +2175,12 @@ int tcpip_io
 					}
 					if (tcpip_broadcast_pipe2socket_in.count(pi->first) > 0)
 					{
+						// close and cleanup previous connection
 						if (close(tcpip_broadcast_pipe2socket_in[pi->first]) < 0)
 							perror("WARNING: tcpip_accept (close)");
 						tcpip_broadcast_pipe2socket_in.erase(pi->first);
+						broadcast_len_in[pi->first] = 0; // discard buffer
+// FIXME: cleanup other stuff
 					}
 					auth_broadcast_finished_in.push_back(pi->first);
 				}
