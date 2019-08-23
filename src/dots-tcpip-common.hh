@@ -44,19 +44,13 @@
 	#include <sys/socket.h>
 
 	#include <microhttpd.h>
+	#include <gcrypt.h>
+	#include <libTMCG.hh>
 
 	void tcpip_init
 		(const std::string &hostname);
 	void tcpip_bindports
 		(const uint16_t start, const bool broadcast);
-	size_t tcpip_connect
-		(const uint16_t start, const bool broadcast);
-	bool tcpip_reconnect
-		(const size_t peer, const bool broadcast);
-	void tcpip_accept
-		();
-	bool tcpip_reaccept
-		(const size_t peer, const bool broadcast);
 	bool tcpip_fork
 		();
 	int tcpip_io
