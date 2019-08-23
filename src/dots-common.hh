@@ -40,12 +40,12 @@
 
 	enum dots_status_t
 	{
-		DOTS_STATUS_UNKNOWN		= 0,
-		DOTS_STATUS_SUBMITTED	= 1,
-		DOTS_STATUS_CONFIRMED	= 2,
-		DOTS_STATUS_STARTED		= 3,
-		DOTS_STATUS_STAMPED		= 4,
-		DOTS_STATUS_FAILED		= 50,
+		DOTS_STATUS_UNKNOWN             = 0,
+		DOTS_STATUS_SUBMITTED           = 1,
+		DOTS_STATUS_CONFIRMED           = 2,
+		DOTS_STATUS_STARTED             = 3,
+		DOTS_STATUS_STAMPED             = 4,
+		DOTS_STATUS_FAILED              = 50,
 	};
 
 	bool dots_http_request
