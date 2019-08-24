@@ -2100,8 +2100,6 @@ int tcpip_io
 						if (close(tcpip_pipe2socket_in[pi->first]) < 0)
 							perror("WARNING: tcpip_accept (close)");
 						tcpip_pipe2socket_in.erase(pi->first);
-						len_in[pi->first] = 0; // discard buffer
-// FIXME: cleanup other stuff
 					}
 					auth_finished_in.push_back(pi->first);
 				}
@@ -2179,8 +2177,6 @@ int tcpip_io
 						if (close(tcpip_broadcast_pipe2socket_in[pi->first]) < 0)
 							perror("WARNING: tcpip_accept (close)");
 						tcpip_broadcast_pipe2socket_in.erase(pi->first);
-						broadcast_len_in[pi->first] = 0; // discard buffer
-// FIXME: cleanup other stuff
 					}
 					auth_broadcast_finished_in.push_back(pi->first);
 				}
