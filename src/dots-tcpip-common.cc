@@ -338,8 +338,8 @@ static int tcpip_mhd_callback
 			" for URL \"" << url << "\" from address " << ipaddr << std::endl;
 		if (opt_verbose > 1)
 		{
-			MHD_get_connection_values(con, MHD_HEADER_KIND, &tcpip_mhd_kv_print,
-				NULL);
+			MHD_get_connection_values(con, MHD_HEADER_KIND,
+				&tcpip_mhd_kv_print, NULL);
 		}
 	}
 	struct MHD_Response *res = NULL;
@@ -582,17 +582,18 @@ static int tcpip_mhd_callback
 						encrypted_sn = "FAILED";
 					// deliver dynamic page with instructions
 					std::stringstream tmp;
-					tmp << TCPIP_MHD_HEADER << TCPIP_MHD_H2 << "Successfully " <<
-						"submitted a signature for stamping.<br><br>" <<
+					tmp << TCPIP_MHD_HEADER << TCPIP_MHD_H2 <<
+						"Successfully submitted a signature for stamping." <<
+						"<br><br>" <<
 						"Please confirm your request immediately by visiting " <<
-						"<a href=\"/confirm?sn=XYZ\">/confirm?sn=XYZ</a>, where" <<
-						" XYZ is a placeholder for the unique serial number " <<
-						"(S/N) of this request.<br><br>" <<
+						"<a href=\"/confirm?sn=XYZ\">/confirm?sn=XYZ</a>," <<
+						" where XYZ is a placeholder for the unique serial" <<
+						" number (S/N) of this request.<br><br>" <<
 						"You can obtain the required S/N by decrypting the " <<
 						"following message with any OpenPGP-complient " <<
-						"application (e.g. by calling gpg -d --pinentry-mode " <<
-						"loopback --batch --passphrase '" << pwd2 << "'):<br>" <<
-						"<pre>" << encrypted_sn << std::endl << "</pre>" <<
+						"application (e.g. by calling gpg -d --pinentry-mode" <<
+						" loopback --batch --passphrase '" << pwd2 << "'):" <<
+						"<br><pre>" << encrypted_sn << std::endl << "</pre>" <<
 						"The corresponding password is \"" << pwd2 << "\"." <<
 						TCPIP_MHD_FOOTER;
 					std::string page = tmp.str();
@@ -2183,8 +2184,8 @@ int tcpip_io
 				else
 				{
 					std::cerr << "WARNING: authentication failed for" <<
-						" broadcast connection to P_" << pi->first << " (fd = " <<
-						pi->second << ")" << std::endl;
+						" broadcast connection to P_" << pi->first <<
+						" (fd = " << pi->second << ")" << std::endl;
 					auth_broadcast_ttl_in[pi->first] = 0; // raise timeout
 				}
 			}
@@ -2227,8 +2228,8 @@ int tcpip_io
 				{
 					if (opt_verbose > 2)
 					{
-						std::cerr << "INFO: received " << len << " bytes on " <<
-							"connection for P_" << pi->first << std::endl;
+						std::cerr << "INFO: received " << len << " bytes on" <<
+							" connection for P_" << pi->first << std::endl;
 					}
 					len_in[pi->first] += len;
 					if ((opt_verbose > 0) &&
@@ -2331,8 +2332,8 @@ int tcpip_io
 				{
 					if (opt_verbose > 2)
 					{
-						std::cerr << "INFO: received " << len << " bytes on " <<
-							"broadcast connection for P_" << pi->first <<
+						std::cerr << "INFO: received " << len << " bytes on" <<
+							" broadcast connection for P_" << pi->first <<
 							std::endl;
 					}
 					broadcast_len_in[pi->first] += len;
