@@ -544,6 +544,14 @@ void run_instance
 			if (trigger_decide && (consensus_decision < peers.size()))
 			{
 				trigger_decide = false;
+				if (opt_verbose > 1)
+				{
+					std::cerr << "INFO: Decide event with" <<
+						" decisions = " << decisions << "," << 
+						" leader = " << leader << ", and" <<
+						" consensus_decision = " << consensus_decision <<
+						std::endl;
+				}
 				if ((leader_change && (consensus_decision == 0)) ||
 					(!leader_change && (consensus_decision == 1)))
 				{
