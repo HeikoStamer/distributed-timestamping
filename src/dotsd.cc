@@ -882,7 +882,6 @@ int main
 	}
 
 	// extract and map passwords
-	std::map<std::string, std::string> map_passwords;
 	for (size_t i = 0; i < peers.size(); i++)
 	{
 		std::stringstream key;
