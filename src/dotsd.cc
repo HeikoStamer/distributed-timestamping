@@ -107,12 +107,12 @@ void run_instance
 		myID += peers[i] + "|";
 	if (opt_verbose)
 		std::cerr << "INFO: RBC myID = " << myID << std::endl;
-	// assume maximum asynchronous t-resilience for RBC and create main channel
+	// assume maximum asynchronous t-resilience and create RBC channel
 	size_t T_RBC = (peers.size() - 1) / 3;
 	CachinKursawePetzoldShoupRBC *rbc = new CachinKursawePetzoldShoupRBC(
 			peers.size(), T_RBC, whoami,
 			aiou, aiounicast::aio_scheduler_roundrobin, (opt_W * 60));
-	rbc->setID(myID);
+	rbc->setID(myID, false); // disable FIFO-order in main protocol
 
 	// initialize main protocol
 	size_t leader = 0, decisions = 0;
@@ -160,7 +160,7 @@ void run_instance
 				" and previous decisions = " << decisions;
 			rbc->recoverID(rstr.str());
 			rbc->Broadcast(msg); // send CONSENSUS_PROPOSE message
-			rbc->unsetID(); // return to main protocol
+			rbc->unsetID(false); // return to main protocol; FIFO-order disabled
 		}
 		time_t entry = time(NULL);
 		do
@@ -328,7 +328,7 @@ void run_instance
 					rbc->Broadcast(msg); // send CONSENSUS_PROPOSE message
 				}
 			}
-			rbc->unsetID(); // return to main protocol
+			rbc->unsetID(false); // return to main protocol; FIFO-order disabled
 		}
 		while ((time(NULL) < (entry + DOTS_TIME_LOOP)) && !signal_caught);
 		mpz_clear(msg);
