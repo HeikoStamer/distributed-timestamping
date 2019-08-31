@@ -29,6 +29,7 @@ typedef std::map<std::string, std::string> tcpip_mss_t;
 typedef std::map<size_t, int>::const_iterator tcpip_mci_t;
 typedef std::map<std::string, dots_status_t>::const_iterator tcpip_sn_mci_t;
 
+extern int                       ctrlfd[2];
 extern int                       pipefd[DOTS_MAX_N][DOTS_MAX_N][2];
 extern int                       self_pipefd[2];
 extern int                       broadcast_pipefd[DOTS_MAX_N][DOTS_MAX_N][2];
@@ -705,6 +706,11 @@ void tcpip_init
 		exit(-1);
 	}
 	// open pipes to communicate with forked instance
+	if (pipe2(ctrlfd, O_NONBLOCK) < 0)
+	{
+		perror("ERROR: dots-tcpip-common (pipe2)");
+		exit(-1);
+	}
 	for (size_t i = 0; i < peers.size(); i++)
 	{
 		for (size_t j = 0; j < peers.size(); j++)
@@ -1532,6 +1538,7 @@ int tcpip_io
 	bool auth_broadcast_sent[peers.size()];
 	std::vector<size_t> auth_finished_in;
 	std::vector<size_t> auth_broadcast_finished_in;
+	std::list<std::string> ctrl_buf;
 	for (size_t i = 0; i < peers.size(); i++)
 	{
 		// connect immediately to all parties
@@ -1721,16 +1728,49 @@ int tcpip_io
 		MHD_socket maxfd = 0;
 		FD_ZERO(&rfds);
 		FD_ZERO(&wfds);
+		if (ctrlfd[1] < FD_SETSIZE)
+		{
+			if (ctrl_buf.size() > 0)
+			{
+				FD_SET(ctrlfd[1], &wfds);
+				if (ctrlfd[1] > maxfd)
+					maxfd = ctrlfd[1];
+			}
+		}
+		else
+		{
+			std::cerr << "ERROR: file descriptor value of control" <<
+				" pipe exceeds FD_SETSIZE" << std::endl;
+			return -201;
+		}
 		for (size_t i = 0; i < peers.size(); i++)
 		{
 			int fd = tcpip_pipe2socket[i]; // listening socket
-			FD_SET(fd, &rfds);
-			if (fd > maxfd)
-				maxfd = fd;
+			if (fd < FD_SETSIZE)
+			{
+				FD_SET(fd, &rfds);
+				if (fd > maxfd)
+					maxfd = fd;
+			}
+			else
+			{
+					std::cerr << "ERROR: file descriptor value of listening" <<
+					" socket exceeds FD_SETSIZE" << std::endl;
+				return -201;
+			}
 			fd = tcpip_broadcast_pipe2socket[i]; // listening socket
-			FD_SET(fd, &rfds);
-			if (fd > maxfd)
-				maxfd = fd;
+			if (fd < FD_SETSIZE)
+			{
+				FD_SET(fd, &rfds);
+				if (fd > maxfd)
+					maxfd = fd;
+			}
+			else
+			{
+					std::cerr << "ERROR: file descriptor value of listening" <<
+					" socket exceeds FD_SETSIZE" << std::endl;
+				return -201;
+			}
 		}
 		for (tcpip_mci_t pi = tcpip_pipe2socket_in.begin();
 			pi != tcpip_pipe2socket_in.end(); ++pi)
@@ -1966,8 +2006,8 @@ int tcpip_io
 			return -201;
 		}
 		struct timeval tv;
-		tv.tv_sec = 1; // FIXME: maybe this is too long (should be around 100 ms)
-		tv.tv_usec = 0;
+		tv.tv_sec = 0;
+		tv.tv_usec = 100000; // timeout 100ms
 		int retval = select((maxfd + 1), &rfds, &wfds, NULL, &tv);
 		if (retval < 0)
 		{
@@ -1984,7 +2024,50 @@ int tcpip_io
 			}
 		}
 		if (retval == 0)
-			continue; // select timeout
+			continue; // select timeout: nothing happen
+		if (FD_ISSET(ctrlfd[1], &wfds) && (ctrl_buf.size() > 0))
+		{
+			std::string msg = ctrl_buf.front();
+			ssize_t num = write(ctrlfd[1], msg.c_str(), msg.length());
+			if (num < 0)
+			{
+				if ((errno == EAGAIN) || (errno == EWOULDBLOCK) ||
+					(errno == EINTR))
+				{
+					if (errno == EAGAIN)
+						perror("WARNING: tcpip_io (write)");
+					continue;
+				}
+				else
+				{
+					perror("ERROR: tcpip_io (write)");
+					std::cerr << "DEBUG: ctrlfd" << std::endl;
+					return -204;
+				}
+			}
+			else if (num == 0)
+			{
+				std::cerr << "ERROR: control pipe to child collapsed" <<
+					std::endl;
+				signal_caught = true; // handle this as an interrupt
+				continue;
+			}
+			if (num < (ssize_t)msg.length())
+			{
+				std::cerr << "WARNING: incomplete control message sent;" <<
+					" msg = " << msg;
+			}
+			else
+			{
+				if (opt_verbose > 1)
+				{
+					std::cerr << "INFO: control message sent successfully;" <<
+						" msg = " << msg;
+				}
+				ctrl_buf.pop_front();
+			}
+			continue;
+		}
 		for (size_t i = 0; i < peers.size(); i++)
 		{
 			if (tcpip_pipe2socket_in_auth.count(i) > 0)
@@ -2103,6 +2186,9 @@ int tcpip_io
 						tcpip_pipe2socket_in.erase(pi->first);
 					}
 					auth_finished_in.push_back(pi->first);
+					std::stringstream ctrl_msg; // create control message
+					ctrl_msg << "CTRL_AIO_RESET_IN:" << pi->first << std::endl;
+					ctrl_buf.push_back(ctrl_msg.str());
 				}
 				else
 				{
@@ -2180,6 +2266,10 @@ int tcpip_io
 						tcpip_broadcast_pipe2socket_in.erase(pi->first);
 					}
 					auth_broadcast_finished_in.push_back(pi->first);
+					std::stringstream ctrl_msg; // create control message
+					ctrl_msg << "CTRL_AIO_BROADCAST_RESET_IN:" << pi->first <<
+						std::endl;
+					ctrl_buf.push_back(ctrl_msg.str());
 				}
 				else
 				{
@@ -2676,6 +2766,9 @@ int tcpip_io
 							fd << ") successful" << std::endl;
 					}
 					tcpip_pipe2socket_out[i] = fd;
+					std::stringstream ctrl_msg; // create control message
+					ctrl_msg << "CTRL_AIO_RESET_OUT:" << i << std::endl;
+					ctrl_buf.push_back(ctrl_msg.str());
 				}
 				else
 				{
@@ -2740,6 +2833,10 @@ int tcpip_io
 							" successful" << std::endl;
 					}
 					tcpip_broadcast_pipe2socket_out[i] = fd;
+					std::stringstream ctrl_msg; // create control message
+					ctrl_msg << "CTRL_AIO_BROADCAST_RESET_OUT:" << i <<
+						std::endl;
+					ctrl_buf.push_back(ctrl_msg.str());
 				}
 				else
 				{
@@ -2847,6 +2944,8 @@ void tcpip_done
 		if (waitpid(thispid, NULL, 0) != thispid)
 			perror("WARNING: tcpip_done (waitpid)");
 	}
+	if ((close(ctrlfd[0]) < 0) || (close(ctrlfd[1]) < 0))
+		perror("WARNING: tcpip_done (close)");
 	for (size_t i = 0; i < peers.size(); i++)
 	{
 		for (size_t j = 0; j < peers.size(); j++)

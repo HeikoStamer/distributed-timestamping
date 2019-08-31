@@ -50,6 +50,7 @@ static const char *protocol = "DOTS-dotsd-0.0";
 #include "dots-common.hh"
 #include "dots-tcpip-common.hh"
 
+int                                ctrlfd[2];
 int                                pipefd[DOTS_MAX_N][DOTS_MAX_N][2];
 int                                self_pipefd[2];
 int                                broadcast_pipefd[DOTS_MAX_N][DOTS_MAX_N][2];
@@ -78,6 +79,126 @@ char                               *opt_passwords = NULL;
 char                               *opt_hostname = NULL;
 char                               *opt_URI = NULL;
 unsigned long int                  opt_p = 56000, opt_W = 5;
+
+bool ctrl
+	(unsigned char *ctrl_buf, const size_t ctrl_buf_size, size_t &ctrl_len,
+	 aiounicast_select *aiou, bool &signal_caught)
+{
+	fd_set rfds;
+	struct timeval tv;
+	int retval;
+	FD_ZERO(&rfds);
+	if (ctrlfd[0] < FD_SETSIZE)
+	{
+		FD_SET(ctrlfd[0], &rfds);
+	}
+	else
+	{
+		std::cerr << "ERROR: file descriptor value of control" <<
+			" pipe exceeds FD_SETSIZE" << std::endl;
+		signal_caught = true; // handle this as an interrupt
+		return true;
+	}
+	tv.tv_sec = 0;
+	tv.tv_usec = 100000; // sleep only for 100000us = 100ms
+	retval = select((ctrlfd[0] + 1), &rfds, NULL, NULL, &tv);
+	if (retval < 0)
+	{
+		if (errno == EINTR)
+		{
+			return true;
+		}
+		else
+		{
+			perror("ERROR: ctrl (select)");
+			signal_caught = true; // handle this as an interrupt
+			return true;
+		}
+	}
+	size_t max = ctrl_buf_size - ctrl_len;
+	if ((retval > 0) && FD_ISSET(ctrlfd[0], &rfds) && (max > 0))
+	{
+		ssize_t len = read(ctrlfd[0], ctrl_buf + ctrl_len, max);
+		if (len < 0)
+		{
+			if ((errno == EWOULDBLOCK) || (errno == EINTR))
+			{
+				return true;
+			}
+			else if (errno == EAGAIN)
+			{
+				perror("WARNING: ctrl (read)");
+				return true;
+			}
+			else
+			{
+				perror("ERROR: ctrl (read)");
+				signal_caught = true; // handle this as an interrupt
+				return true;
+			}
+		}
+		else if (len == 0)
+		{
+			std::cerr << "ERROR: control pipe collapsed" << std::endl;
+			signal_caught = true; // handle this as an interrupt
+			return true;
+		}
+		else
+			ctrl_len += len;
+	}
+	bool nl_found = false;
+	size_t nl_pos = 0;
+	for (size_t i = 0; i < ctrl_len; i++)
+	{
+		if (ctrl_buf[i] == '\n')
+		{
+			nl_found = true, nl_pos = i;
+			break;
+		}
+	}
+	if (nl_found)
+	{
+		char msg[1024];
+		memset(msg, 0, sizeof(msg));
+		memcpy(msg, ctrl_buf, nl_pos);
+		if (opt_verbose > 1)
+		{
+			std::cerr << "INFO: control message received;" <<
+				" msg = " << msg << std::endl;
+		}
+		std::string msg_str(msg);
+		size_t msg_col = msg_str.find(":");
+		if (msg_col != msg_str.npos)
+		{
+			std::string msg_cmd, msg_arg;
+			msg_cmd = msg_str.substr(0, msg_col);
+			if (msg_str.length() > 1)
+			{
+				msg_arg = msg_str.substr(msg_col + 1,
+					msg_str.length() - msg_col - 1);
+			}
+			if (opt_verbose > 1)
+			{
+				std::cerr << "INFO: control message processed;" <<
+					" cmd = " << msg_cmd << " arg = " << msg_arg << std::endl;
+			}
+			size_t peer = strtoul(msg_arg.c_str(), NULL, 10);
+			if (msg_cmd == "CTRL_AIO_BROADCAST_RESET_IN")
+				aiou->Reset(peer, true);
+			if (msg_cmd == "CTRL_AIO_BROADCAST_RESET_OUT")
+				aiou->Reset(peer, false);
+		}
+		else
+		{
+			std::cerr << "WARNING: bad control message;" <<
+				" msg = " << msg << std::endl;
+		}
+		memmove(ctrl_buf, ctrl_buf + nl_pos + 1, ctrl_len - nl_pos - 1);
+		ctrl_len -= (nl_pos + 1);
+		memset(ctrl_buf + ctrl_len, 0, ctrl_buf_size - ctrl_len);
+	}
+	return false;
+}
 
 void run_instance
 	(const size_t whoami)
@@ -125,6 +246,15 @@ void run_instance
 		mpz_init_set_ui(tmp, 0UL); // undefined
 		exec_sn_val.push_back(tmp);
 	}
+	unsigned char ctrl_buf[peers.size() * 1024]; // buffer for control messages
+	size_t ctrl_len = 0;
+	time_t timeout = DOTS_TIME_SETUP; // timeout for initial setup
+	time_t setup_time = time(NULL);
+	while (!signal_caught && (time(NULL) < (setup_time + timeout)))
+	{
+		if (ctrl(ctrl_buf, sizeof(ctrl_buf), ctrl_len, aiou, signal_caught))
+			continue;
+	}
 	// initialize algorithm "Randomized Binary Consensus" (5.12, 5.13) [CGR06]
 	size_t consensus_round = 0, consensus_phase = 0;
 	size_t consensus_proposal = peers.size(); // undefined
@@ -165,6 +295,9 @@ void run_instance
 		time_t entry = time(NULL);
 		do
 		{
+			// inner loop: handle control messages from parent
+			if (ctrl(ctrl_buf, sizeof(ctrl_buf), ctrl_len, aiou, signal_caught))
+				continue;
 			// inner loop: waiting for messages on RBC channel
 			size_t p = 0, s = aiounicast::aio_scheduler_roundrobin;
 			if (rbc->Deliver(msg, p, s, DOTS_TIME_POLL))
@@ -704,7 +837,8 @@ bool fork_instance
 int main
 	(int argc, char *const *argv, char **envp)
 {
-	static const char *usage = "dotsd [OPTIONS] -P <PASSWORDS> -H <hostname> <PEERS>";
+	static const char *usage =
+		"dotsd [OPTIONS] -P <PASSWORDS> -H <hostname> <PEERS>";
 	dkgpg_env = envp;
 
 	// create peer list from remaining arguments
