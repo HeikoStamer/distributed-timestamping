@@ -239,12 +239,15 @@ void run_instance
 	size_t leader = 0, decisions = 0;
 	bool leader_change = false, trigger_decide = false;
 	std::string sn = "";
-	std::vector<mpz_ptr> exec_sn_val;
+	std::vector<mpz_ptr> ping_val, exec_sn_val;
 	for (size_t i = 0; i < peers.size(); i++)
 	{
-		mpz_ptr tmp = new mpz_t();
-		mpz_init_set_ui(tmp, 0UL); // undefined
-		exec_sn_val.push_back(tmp);
+		mpz_ptr tmp1 = new mpz_t();
+		mpz_init_set_ui(tmp1, decisions);
+		ping_val.push_back(tmp1);
+		mpz_ptr tmp2 = new mpz_t();
+		mpz_init_set_ui(tmp2, 0UL); // undefined
+		exec_sn_val.push_back(tmp2);
 	}
 	unsigned char ctrl_buf[peers.size() * 1024]; // buffer for control messages
 	size_t ctrl_len = 0;
@@ -267,7 +270,7 @@ void run_instance
 	{
 		// sending messages
 		mpz_t msg;
-		mpz_init_set_ui(msg, 1UL);
+		mpz_init_set_ui(msg, decisions);
 		rbc->Broadcast(msg); // send a PING message
 		if (consensus_phase == 0)
 		{
@@ -302,30 +305,28 @@ void run_instance
 			size_t p = 0, s = aiounicast::aio_scheduler_roundrobin;
 			if (rbc->Deliver(msg, p, s, DOTS_TIME_POLL))
 			{
-				if (mpz_cmp_ui(msg, 1UL) == 0)
+				if (opt_verbose > 1)
 				{
-					if (opt_verbose > 1)
-					{
-						std::cerr << "INFO: P_" << whoami << " received PING" <<
-							" from P_" << p << std::endl;
-					}
-					ping[p] = time(NULL);
+					std::cerr << "INFO: P_" << whoami << " received PING" <<
+						" from P_" << p << ", m = " << msg << std::endl;
 				}
-				else if (mpz_cmp_ui(msg, 1UL) > 0)
-				{
-					if (opt_verbose > 1)
-					{
-						std::cerr << "INFO: P_" << whoami << " received EXEC" <<
-							"_SN from P_" << p << ", m = " << msg << std::endl;
-					}
-					mpz_set(exec_sn_val[p], msg);
-				}
-				else
-				{
-					std::cerr << "WARNING: received unknown message m = " <<
-						mpz_get_ui(msg) << " from P_" << p << std::endl;
-				}
+				mpz_set(ping_val[p], msg);
+				ping[p] = time(NULL);
 			}
+			std::stringstream estr; // switch RBC to exec subprotocol
+			estr << myID << " exec subprotocol with previous decisions = " <<
+				decisions;
+			rbc->recoverID(estr.str());
+			if (rbc->Deliver(msg, p, s, DOTS_TIME_POLL))
+			{
+				if (opt_verbose > 1)
+				{
+					std::cerr << "INFO: P_" << whoami << " received EXEC" <<
+						"_SN from P_" << p << ", m = " << msg << std::endl;
+				}
+				mpz_set(exec_sn_val[p], msg);
+			}
+			rbc->unsetID(false); // return to main protocol; FIFO-order disabled
 			std::stringstream rstr; // switch RBC to consensus subprotocol
 			rstr << myID << " and consensus_round = " << consensus_round <<
 				" and previous decisions = " << decisions;
@@ -465,7 +466,7 @@ void run_instance
 		}
 		while ((time(NULL) < (entry + DOTS_TIME_LOOP)) && !signal_caught);
 		mpz_clear(msg);
-		// 1. print statistics about consensus subprotocol
+		// 1. print statistics about main protocol and consensus subprotocol
 		if (opt_verbose > 1)
 		{
 			std::cerr << "INFO: decisions = " << decisions << 
@@ -491,6 +492,8 @@ void run_instance
 					std::cerr << consensus_val[i] << std::endl;
 				else
 					std::cerr << "undefined" << std::endl;
+				std::cerr << "INFO: ping_val[" << i << "] = " <<
+					ping_val[i] << std::endl;
 			}
 			std::vector<std::string>::iterator it;
 			it = std::find(active_peers.begin(), active_peers.end(),
@@ -647,7 +650,10 @@ void run_instance
 					mpz_t sn_hash, leader_hash;
 					mpz_init(sn_hash);
 					if (mpz_set_str(sn_hash, sn.c_str(), 16) == -1)
-						std::cerr << "WARNING: mpz_set_str() failed" << std::endl;
+					{
+						std::cerr << "WARNING: mpz_set_str() for sn_hash" <<
+							" failed" << std::endl;
+					}
 					mpz_init_set_ui(leader_hash, leader);
 					mpz_init(msg);
 					tmcg_mpz_shash(msg, 2, sn_hash, leader_hash);
@@ -674,7 +680,7 @@ void run_instance
 		if (!dkgpg_forked && !signal_caught)
 		{
 			// Decide event: choose a (new) leader
-			if (trigger_decide && (consensus_decision < peers.size()))
+			if (trigger_decide && (consensus_decision < 2))
 			{
 				trigger_decide = false;
 				if (opt_verbose > 1)
@@ -707,6 +713,25 @@ void run_instance
 				}
 				consensus_phase = 0;
 			}
+			else
+			{
+				size_t max = 0;
+				for (size_t i = 0; i < peers.size(); i++)
+				{
+					if (std::find(active_peers.begin(), active_peers.end(),
+						peers[i]) == active_peers.end())
+					{
+						continue;
+					}
+					size_t val = mpz_get_ui(ping_val[i]);
+					if (val > max)
+						max = val;
+				}
+				if (max > (decisions+1))
+				{
+// FIXME: recover with adjusted counter decisions
+				}
+			}
 			// request work load from active leader
 			std::string type;
 			if (std::find(active_peers.begin(), active_peers.end(),
@@ -732,13 +757,21 @@ void run_instance
 					mpz_t sn_hash, leader_hash;
 					mpz_init(sn_hash);
 					if (mpz_set_str(sn_hash, sn.c_str(), 16) == -1)
-						std::cerr << "WARNING: mpz_set_str() failed" << std::endl;
+					{
+						std::cerr << "WARNING: mpz_set_str() for sn_hash" <<
+							" failed" << std::endl;
+					}
 					mpz_init_set_ui(leader_hash, leader);
 					mpz_init(msg);
 					tmcg_mpz_shash(msg, 2, sn_hash, leader_hash);
 					mpz_clear(sn_hash);
 					mpz_clear(leader_hash);
+					std::stringstream estr; // switch RBC to exec subprotocol
+					estr << myID << " exec subprotocol with previous" <<
+						" decisions = " << decisions;
+					rbc->recoverID(estr.str());
 					rbc->Broadcast(msg); // send EXEC_SN message
+					rbc->unsetID(false); // return to main protocol; no FIFO
 					mpz_clear(msg);
 				}
 				else
@@ -789,6 +822,11 @@ void run_instance
 			perror("WARNING: run_instance (waitpid)");
 	}
 	// release allocated ressources of main protocol
+	for (size_t i = 0; i < ping_val.size(); i++)
+	{
+		mpz_clear(ping_val[i]);
+		delete [] ping_val[i];
+	}
 	for (size_t i = 0; i < exec_sn_val.size(); i++)
 	{
 		mpz_clear(exec_sn_val[i]);
@@ -1023,7 +1061,7 @@ int main
 			std::endl;
 	}
 
-	// extract and map passwords
+	// extract and map provided passwords
 	for (size_t i = 0; i < peers.size(); i++)
 	{
 		std::stringstream key;

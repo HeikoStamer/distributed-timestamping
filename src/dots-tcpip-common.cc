@@ -586,14 +586,14 @@ static int tcpip_mhd_callback
 					tmp << TCPIP_MHD_HEADER << TCPIP_MHD_H2 <<
 						"Successfully submitted a signature for stamping." <<
 						"<br><br>" <<
-						"Please confirm your request immediately by visiting " <<
-						"<a href=\"/confirm?sn=XYZ\">/confirm?sn=XYZ</a>," <<
+						"Please confirm your request immediately by visiting" <<
+						" <a href=\"/confirm?sn=XYZ\">/confirm?sn=XYZ</a>," <<
 						" where XYZ is a placeholder for the unique serial" <<
 						" number (S/N) of this request.<br><br>" <<
 						"You can obtain the required S/N by decrypting the " <<
 						"following message with any OpenPGP-complient " <<
-						"application (e.g. by calling gpg -d --pinentry-mode" <<
-						" loopback --batch --passphrase '" << pwd2 << "'):" <<
+						"application (e.g. by calling <a href=\"https://www." <<
+						"nongnu.org/dkgpg/\">dkg-decrypt</a>):" <<
 						"<br><pre>" << encrypted_sn << std::endl << "</pre>" <<
 						"The corresponding password is \"" << pwd2 << "\"." <<
 						TCPIP_MHD_FOOTER;
@@ -1352,7 +1352,7 @@ bool tcpip_work
 		int ret = waitpid(thispid, &wstatus, WNOHANG);
 		if (ret < 0)
 		{
-			perror("WARNING: tcpip_io (waitpid)");
+			perror("WARNING: tcpip_work (waitpid)");
 		}
 		else if (ret == thispid)
 		{
