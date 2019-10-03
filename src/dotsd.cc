@@ -517,7 +517,7 @@ void run_instance
 		}
 		for (size_t i = 0; i < peers.size(); i++)
 		{
-			if (opt_verbose > 1)
+			if (opt_verbose > 2)
 			{
 				std::cerr << "INFO: consensus_val[" << i << "] = ";
 				if (mpz_cmp_ui(consensus_val[i], 0UL))
@@ -748,6 +748,8 @@ void run_instance
 				}
 				else
 					sc += 64;
+				if (sn == SN)
+					sn = ""; // don't reassign already processed S/N
 			}
 		}
 		// 4. maintain active_peers array
