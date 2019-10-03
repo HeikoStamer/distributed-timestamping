@@ -304,10 +304,10 @@ void run_instance
 					mpz_add_ui(msg, msg, leader);
 				}
 				else
-					mpz_set_ui(msg, 0UL); // undefined
+					mpz_set_ui(msg, 1UL); // bad S/N
 			}
 			else
-				mpz_set_ui(msg, 1UL); // empty S/N
+				mpz_set_ui(msg, 2UL); // empty S/N
 			std::stringstream rstr; // switch RBC to consensus subprotocol
 			rstr << myID << " and consensus_round = " << consensus_round <<
 				" and previous decisions = " << decisions << " PROPOSE";
@@ -441,7 +441,8 @@ void run_instance
 					std::cerr << "INFO: Randomized Large Domain Consensus:" <<
 						" #(val) > N/2 && phase == 1" << std::endl;
 				}
-				mpz_set_ui(consensus_proposal, 0UL); // undefined
+				// DEVIATION: use error value for proposal instead of undefined 
+				mpz_set_ui(consensus_proposal, 3UL); // no majority
 				for (std::map<size_t, size_t>::const_iterator
 					i = consensus_val_numbers.begin();
 					i != consensus_val_numbers.end(); ++i)
