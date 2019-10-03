@@ -236,8 +236,9 @@ void run_instance
 	rbc->setID(myID, false); // disable FIFO-order in main protocol
 
 	// initialize main protocol
+	time_t last_event = time(NULL);
 	size_t leader = 0, LEADER = 0, decisions = 0;
-	bool trigger_decide = false;
+	bool trigger_timeout = false, trigger_decide = false;
 	std::string sn = "", SN = "";
 	std::vector<mpz_ptr> ping_val;
 	for (size_t i = 0; i < peers.size(); i++)
@@ -268,7 +269,8 @@ void run_instance
 		mpz_init_set_ui(tmp, 0UL); // undefined
 		consensus_val.push_back(tmp);
 	}
-	// main loop: for each iteration an isolated consensus is done  
+	std::vector<mpz_ptr> consensus_values;
+	// main loop: for each iteration an isolated consensus is done
 	do
 	{
 		// sending protocol messages
@@ -287,6 +289,12 @@ void run_instance
 				mpz_set_ui(consensus_val[i], 0UL); // set all to undefined
 			mpz_set_ui(consensus_proposal, 0UL); // undefined
 			mpz_set_ui(consensus_decision, 0UL); // undefined
+			for (size_t i = 0; i < consensus_values.size(); i++)
+			{
+				mpz_clear(consensus_values[i]);
+				delete [] consensus_values[i];
+			}
+			consensus_values.clear();
 			mpz_set_ui(msg, 0UL); // undefined
 			if (sn.length() > 0)
 			{
@@ -338,7 +346,28 @@ void run_instance
 						" from P_" << p << std::endl;
 				}
 				if (consensus_phase == 1)
+				{
 					mpz_set(consensus_val[p], msg);
+					// Prepare array for Large Domain (algorithm 5.14 [CGR06])
+					if (mpz_cmp_ui(consensus_val[p], 0UL))
+					{
+						bool add = true;
+						for (size_t i = 0; i < consensus_values.size(); i++)
+						{
+							if (!mpz_cmp(consensus_val[p], consensus_values[i]))
+							{
+								add = false;
+								break;
+							}
+						}
+						if (add)
+						{
+							mpz_ptr tmp = new mpz_t();
+							mpz_init_set(tmp, consensus_val[p]);
+							consensus_values.push_back(tmp);
+						}
+					}
+				}
 				else
 					rbc->QueueFrom(msg, p);
 			}
@@ -377,6 +406,8 @@ void run_instance
 				trigger_decide = true; // trigger Decide event
 			}
 			rbc->unsetID(false); // return to main protocol; FIFO-order disabled
+			if (time(NULL) > (last_event + DOTS_TIME_EVENT))
+				trigger_timeout = true; // trigger Timeout event
 			// Randomized Binary Consensus: prepare
 			size_t consensus_val_defined = 0;
 			std::map<size_t, size_t> consensus_val_numbers;
@@ -401,8 +432,6 @@ void run_instance
 						consensus_val_numbers[i] = 1;
 				}
 			}
-//std::cerr << "BUG: consensus_val_defined = " << consensus_val_defined <<
-//" consensus_val_numbers.size() = " << consensus_val_numbers.size() << std::endl;
 			// Randomized Binary Consensus: phase 1 (algorithm 5.12 [CGR06])
 			if ((consensus_val_defined > (peers.size() / 2)) &&
 				(consensus_phase == 1) && !mpz_cmp_ui(consensus_decision, 0UL))
@@ -470,14 +499,14 @@ void run_instance
 				}
 				else
 				{
-					size_t c = 0, sc = 0, m = consensus_val_numbers.size();
+					// Use array for Large Domain (algorithm 5.14 [CGR06])
+					size_t c = 0, sc = 0, m = consensus_values.size();
+					mpz_set_ui(consensus_proposal, 0UL); // undefined
 					if (m > 1)
 						c = tmcg_mpz_srandom_mod(m); // toss the "common coin"
-					for (std::map<size_t, size_t>::iterator
-						i = consensus_val_numbers.begin();
-						i != consensus_val_numbers.end(); ++i, sc++)
+					for (size_t i = 0; i < m; i++, sc++)
 					{
-						mpz_set(consensus_proposal, consensus_val[i->first]);
+						mpz_set(consensus_proposal, consensus_values[i]);
 						if (c == sc)
 							break;
 					}
@@ -666,9 +695,25 @@ void run_instance
 		// 3. handle events and request work load
 		if (!dkgpg_forked && !signal_caught && (SN.length() == 0))
 		{
+			// Timeout event
+			if (trigger_timeout)
+			{
+				last_event = time(NULL);
+				trigger_timeout = false;
+				if (opt_verbose > 1)
+				{
+					std::cerr << "INFO: Timeout event at" <<
+						" decisions = " << decisions << " and" << 
+						" consensus_decision = " << consensus_decision <<
+						std::endl;
+				}
+				consensus_phase = 0;
+				sn = "";
+			}
 			// Decide event
 			if (trigger_decide)
 			{
+				last_event = time(NULL);
 				trigger_decide = false;
 				if (opt_verbose > 1)
 				{
@@ -807,6 +852,11 @@ void run_instance
 	}
 	mpz_clear(consensus_proposal);
 	mpz_clear(consensus_decision);
+	for (size_t i = 0; i < consensus_values.size(); i++)
+	{
+		mpz_clear(consensus_values[i]);
+		delete [] consensus_values[i];
+	}
 	// release RBC channel and P2P channels
 	delete rbc;
 	if (opt_verbose)
