@@ -54,6 +54,8 @@ AC_DEFINE(DOTS_TIME_INACTIVE, 300, [Define number of seconds without PING\
  received that turns a peer inactive])
 AC_DEFINE(DOTS_TIME_UNCONFIRMED, 300, [Define number of seconds that a request\
  is hold without confirmation])
+AC_DEFINE(DOTS_TIME_REMOVE, 259200, [Define number of seconds that a stamped\
+ request is shown on the status page])
 AC_DEFINE(DOTS_TIME_STAMP, 604800, [Define number of seconds that a timestamp\
  is hold for retrieving])
 AC_DEFINE(DOTS_TIME_LOG, 86400, [Define number of seconds that a stamp-log\

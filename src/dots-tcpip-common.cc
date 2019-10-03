@@ -1419,11 +1419,14 @@ bool tcpip_work
 			if (st < (current_time - DOTS_TIME_LOG))
 				cleanup_failed.push_back(q->first);
 		}
-		else if (q->second == DOTS_STATUS_STAMPED)
+		else if ((q->second == DOTS_STATUS_STAMPED) ||
+			(q->second == DOTS_STATUS_REMOVED))
 		{
 			time_t st = tcpip_sn2time_stamped[q->first];
 			if (st < (current_time - DOTS_TIME_STAMP))
 				cleanup_stamped.push_back(q->first);
+			if (st < (current_time - DOTS_TIME_REMOVE))
+				tcpip_sn2status[q->first] = DOTS_STATUS_REMOVED;
 		}
 	}
 	for (size_t i = 0; i < cleanup_submitted.size(); i++)
