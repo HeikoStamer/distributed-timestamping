@@ -45,7 +45,8 @@
 		DOTS_STATUS_CONFIRMED           = 2,
 		DOTS_STATUS_STARTED             = 3,
 		DOTS_STATUS_STAMPED             = 4,
-		DOTS_STATUS_FAILED              = 50,
+		DOTS_STATUS_REMOVED				= 5,
+		DOTS_STATUS_FAILED              = 42,
 	};
 
 	bool dots_http_request

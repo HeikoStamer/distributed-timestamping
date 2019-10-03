@@ -91,9 +91,9 @@ static const char *tcpip_mhd_defaultpage = TCPIP_MHD_HEADER TCPIP_MHD_H2
 	"<li><a href=\"/confirm?sn=XYZ\">Confirm your submitted request</a></li>"
 	"<li><a href=\"/queue\">Watch the queue of confirmed requests</a></li>"
 	"<li><a href=\"/status\">Watch the status of any request</a></li>"
-	"<li><a href=\"/timestamp?sn=XYZ\">Retrieve the timestamp signature of any "
+	"<li><a href=\"/timestamp?sn=XYZ\">Retrieve the timestamp signature of a "
 		"recent request</a></li>"
-	"<li><a href=\"/log?sn=XYZ\">Read the stamp-log of any recently failed "
+	"<li><a href=\"/log?sn=XYZ\">Read the stamp-log of a recently failed "
 		"request</a></li>"
 	"</ul>" TCPIP_MHD_FOOTER;
 static const char *tcpip_mhd_policypage = TCPIP_MHD_HEADER TCPIP_MHD_H2
@@ -402,8 +402,11 @@ static int tcpip_mhd_callback
 			for (tcpip_sn_mci_t q = tcpip_sn2status.begin();
 				q != tcpip_sn2status.end(); ++q)
 			{
-				if (q->second != DOTS_STATUS_SUBMITTED)
+				if ((q->second != DOTS_STATUS_SUBMITTED) &&
+					(q->second != DOTS_STATUS_REMOVED))
+				{
 					tmp << q->first << ":" << (int)q->second << std::endl;
+				}
 			}
 			std::string page = tmp.str();
 			res = MHD_create_response_from_buffer(page.length(),
