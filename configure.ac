@@ -18,7 +18,7 @@
 #
 # (Please process this file with autoconf to produce a configure script.)
 
-AC_REVISION([20190901])
+AC_REVISION([20191003])
 AC_PREREQ(2.61)
 
 AC_INIT([Distributed OpenPGP Timestamping Service], [0.0.2],
@@ -105,18 +105,18 @@ AC_SUBST(LIBGMP_CFLAGS)
 LDFLAGS="$backup_LDFLAGS"
 CPPFLAGS="$backup_CPPFLAGS"
 
-AM_PATH_LIBGCRYPT("1.6.0")
+AM_PATH_LIBGCRYPT("1.8.0")
 if test "x$LIBGCRYPT_LIBS" = "x"; then
-	AC_MSG_ERROR([libgcrypt >= 1.6.0 is required])
+	AC_MSG_ERROR([libgcrypt >= 1.8.0 is required])
 fi
 backup_CPPFLAGS="$CPPFLAGS"
 CPPFLAGS="$LIBGCRYPT_CFLAGS $backup_CPPFLAGS"
 AC_CHECK_HEADERS([gcrypt.h], , AC_MSG_ERROR([libgcrypt headers are missing]))
 CPPFLAGS="$backup_CPPFLAGS"
 
-AM_PATH_GPG_ERROR("1.12")
+AM_PATH_GPG_ERROR("1.27")
 if test "x$GPG_ERROR_LIBS" = "x"; then
-	AC_MSG_ERROR([libgpg-error >= 1.12 is required])
+	AC_MSG_ERROR([libgpg-error >= 1.27 is required])
 fi
 
 AM_PATH_LIBTMCG("1.4.0")

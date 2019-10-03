@@ -236,18 +236,15 @@ void run_instance
 	rbc->setID(myID, false); // disable FIFO-order in main protocol
 
 	// initialize main protocol
-	size_t leader = 0, decisions = 0;
-	bool leader_change = false, trigger_decide = false;
-	std::string sn = "";
-	std::vector<mpz_ptr> ping_val, exec_sn_val;
+	size_t leader = 0, LEADER = 0, decisions = 0;
+	bool trigger_decide = false;
+	std::string sn = "", SN = "";
+	std::vector<mpz_ptr> ping_val;
 	for (size_t i = 0; i < peers.size(); i++)
 	{
-		mpz_ptr tmp1 = new mpz_t();
-		mpz_init_set_ui(tmp1, decisions);
-		ping_val.push_back(tmp1);
-		mpz_ptr tmp2 = new mpz_t();
-		mpz_init_set_ui(tmp2, 0UL); // undefined
-		exec_sn_val.push_back(tmp2);
+		mpz_ptr tmp = new mpz_t();
+		mpz_init_set_ui(tmp, decisions); // undefined
+		ping_val.push_back(tmp);
 	}
 	unsigned char ctrl_buf[peers.size() * 1024]; // buffer for control messages
 	size_t ctrl_len = 0;
@@ -259,16 +256,22 @@ void run_instance
 			continue;
 	}
 	// initialize algorithm "Randomized Binary Consensus" (5.12, 5.13) [CGR06]
+	// extended by algorithm "Randomize Consensus with Large Domain" (5.14)
 	size_t consensus_round = 0, consensus_phase = 0;
-	size_t consensus_proposal = peers.size(); // undefined
-	size_t consensus_decision = peers.size(); // undefined
-	std::vector<size_t> consensus_val;
+	mpz_t consensus_proposal, consensus_decision;
+	mpz_init_set_ui(consensus_proposal, 0UL); // undefined
+	mpz_init_set_ui(consensus_decision, 0UL); // undefined
+	std::vector<mpz_ptr> consensus_val;
 	for (size_t i = 0; i < peers.size(); i++)
-		consensus_val.push_back(peers.size()); // set all to undefined
-	// main loop: for each change of the "leader" an isolated consensus is done  
+	{
+		mpz_ptr tmp = new mpz_t();
+		mpz_init_set_ui(tmp, 0UL); // undefined
+		consensus_val.push_back(tmp);
+	}
+	// main loop: for each iteration an isolated consensus is done  
 	do
 	{
-		// sending messages
+		// sending protocol messages
 		mpz_t msg;
 		mpz_init_set_ui(msg, decisions);
 		rbc->Broadcast(msg); // send a PING message
@@ -276,21 +279,30 @@ void run_instance
 		{
 			if (opt_verbose > 1)
 			{
-				std::cerr << "INFO: Randomized Binary Consensus:" <<
+				std::cerr << "INFO: Randomized Large Domain Consensus:" <<
 					" Propose" << std::endl;
 			}
 			consensus_round = 1, consensus_phase = 1;
 			for (size_t i = 0; i < consensus_val.size(); i++)
-				consensus_val[i] = peers.size(); // set all to undefined
-			consensus_proposal = peers.size(); // undefined
-			consensus_decision = peers.size(); // undefined
-			if (leader_change)
-				mpz_set_ui(msg, 1UL);
+				mpz_set_ui(consensus_val[i], 0UL); // set all to undefined
+			mpz_set_ui(consensus_proposal, 0UL); // undefined
+			mpz_set_ui(consensus_decision, 0UL); // undefined
+			mpz_set_ui(msg, 0UL); // undefined
+			if (sn.length() > 0)
+			{
+				if (mpz_set_str(msg, sn.c_str(), 16) == 0)
+				{
+					mpz_mul_ui(msg, msg, 256UL); // encode leader into message
+					mpz_add_ui(msg, msg, leader);
+				}
+				else
+					mpz_set_ui(msg, 0UL); // undefined
+			}
 			else
-				mpz_set_ui(msg, 0UL);
+				mpz_set_ui(msg, 1UL); // empty S/N
 			std::stringstream rstr; // switch RBC to consensus subprotocol
 			rstr << myID << " and consensus_round = " << consensus_round <<
-				" and previous decisions = " << decisions;
+				" and previous decisions = " << decisions << " PROPOSE";
 			rbc->recoverID(rstr.str());
 			rbc->Broadcast(msg); // send CONSENSUS_PROPOSE message
 			rbc->unsetID(false); // return to main protocol; FIFO-order disabled
@@ -313,156 +325,176 @@ void run_instance
 				mpz_set(ping_val[p], msg);
 				ping[p] = time(NULL);
 			}
-			std::stringstream estr; // switch RBC to exec subprotocol
-			estr << myID << " exec subprotocol with previous decisions = " <<
-				decisions;
-			rbc->recoverID(estr.str());
+			std::stringstream rp; // switch RBC to consensus subprotocol
+			rp << myID << " and consensus_round = " << consensus_round <<
+				" and previous decisions = " << decisions << " PROPOSE";
+			rbc->recoverID(rp.str());
 			if (rbc->Deliver(msg, p, s, DOTS_TIME_POLL))
 			{
 				if (opt_verbose > 1)
 				{
-					std::cerr << "INFO: P_" << whoami << " received EXEC" <<
-						"_SN from P_" << p << ", m = " << msg << std::endl;
+					std::cerr << "INFO: P_" << whoami << " received" <<
+						" CONSENSUS_PROPOSE with value " << msg <<
+						" from P_" << p << std::endl;
 				}
-				mpz_set(exec_sn_val[p], msg);
+				if (consensus_phase == 1)
+					mpz_set(consensus_val[p], msg);
+				else
+					rbc->QueueFrom(msg, p);
 			}
 			rbc->unsetID(false); // return to main protocol; FIFO-order disabled
-			std::stringstream rstr; // switch RBC to consensus subprotocol
-			rstr << myID << " and consensus_round = " << consensus_round <<
-				" and previous decisions = " << decisions;
-			rbc->recoverID(rstr.str());
+			std::stringstream rd; // switch RBC to consensus subprotocol
+			rd << myID << " and consensus_round = " << consensus_round <<
+				" and previous decisions = " << decisions << " DECIDE";
+			rbc->recoverID(rd.str());
 			if (rbc->Deliver(msg, p, s, DOTS_TIME_POLL))
 			{
-				if (mpz_cmp_ui(msg, peers.size()) < 0)
+				if (opt_verbose > 1)
 				{
-					if (opt_verbose > 2)
-					{
-						std::cerr << "INFO: P_" << whoami <<
-							" received CONSENSUS_PROPOSE with value " <<
-							mpz_get_ui(msg) << " from P_" << p << std::endl;
-					}
-					if (consensus_phase == 1)
-						consensus_val[p] = mpz_get_ui(msg);
-					else
-						rbc->QueueFrom(msg, p);
+					std::cerr << "INFO: P_" << whoami << " received" <<
+						" CONSENSUS_DECIDE with value " << msg <<
+						" from P_" << p << std::endl;
 				}
-				else if ((mpz_cmp_ui(msg, peers.size()) >= 0) &&
-					(mpz_cmp_ui(msg, 2 * peers.size()) < 0))
-				{
-					if (opt_verbose > 2)
-					{
-						std::cerr << "INFO: P_" << whoami <<
-							" received CONSENSUS_DECIDE with value " <<
-							(mpz_get_ui(msg) - peers.size()) <<
-							" from P_" << p << std::endl;
-					}
-					if (consensus_phase == 2)
-						consensus_val[p] = mpz_get_ui(msg) - peers.size();
-					else
-						rbc->QueueFrom(msg, p);
-				}
-				else if ((mpz_cmp_ui(msg, 2 * peers.size()) >= 0) &&
-					(mpz_cmp_ui(msg, 3 * peers.size()) < 0))
-				{
-					if (opt_verbose > 1)
-					{
-						std::cerr << "INFO: P_" << whoami <<
-							" received DECIDED with value " <<
-							(mpz_get_ui(msg) - (2 * peers.size())) <<
-							" from P_" << p << std::endl;
-					}
-					consensus_decision = (mpz_get_ui(msg) - (2 * peers.size()));
-					trigger_decide = true; // trigger Decide event
-				}
+				if (consensus_phase == 2)
+					mpz_set(consensus_val[p], msg);
 				else
-				{
-					std::cerr << "WARNING: received unknown message m = " <<
-						mpz_get_ui(msg) << " from P_" << p << std::endl;
-				}
+					rbc->QueueFrom(msg, p);
 			}
+			rbc->unsetID(false); // return to main protocol; FIFO-order disabled
+			std::stringstream rdd; // switch RBC to consensus subprotocol
+			rdd << myID << " and consensus_round = " << consensus_round <<
+				" and previous decisions = " << decisions << " DECIDED";
+			rbc->recoverID(rdd.str());
+			if (rbc->Deliver(msg, p, s, DOTS_TIME_POLL))
+			{
+				if (opt_verbose > 1)
+				{
+					std::cerr << "INFO: P_" << whoami << " received" <<
+						" DECIDED with value " << msg <<
+						" from P_" << p << std::endl;
+				}
+				mpz_set(consensus_decision, msg);
+				trigger_decide = true; // trigger Decide event
+			}
+			rbc->unsetID(false); // return to main protocol; FIFO-order disabled
 			// Randomized Binary Consensus: prepare
 			size_t consensus_val_defined = 0;
 			std::map<size_t, size_t> consensus_val_numbers;
 			for (size_t i = 0; i < peers.size(); i++)
 			{
-				if (consensus_val[i] < peers.size())
+				if (mpz_cmp_ui(consensus_val[i], 0UL) > 0)
 				{
 					consensus_val_defined++;
-					if (consensus_val_numbers.count(consensus_val[i]) == 0)
-						consensus_val_numbers[consensus_val[i]] = 1;
-					else
-						consensus_val_numbers[consensus_val[i]]++;
+					bool add = true;
+					for (std::map<size_t, size_t>::const_iterator
+						j = consensus_val_numbers.begin();
+						j != consensus_val_numbers.end(); ++j)
+					{
+						if (!mpz_cmp(consensus_val[i], consensus_val[j->first]))
+						{
+							consensus_val_numbers[j->first]++;
+							add = false;
+							break;
+						}
+					}
+					if (add)
+						consensus_val_numbers[i] = 1;
 				}
 			}
+//std::cerr << "BUG: consensus_val_defined = " << consensus_val_defined <<
+//" consensus_val_numbers.size() = " << consensus_val_numbers.size() << std::endl;
 			// Randomized Binary Consensus: phase 1 (algorithm 5.12 [CGR06])
 			if ((consensus_val_defined > (peers.size() / 2)) &&
-				(consensus_phase == 1) && (consensus_decision == peers.size()))
+				(consensus_phase == 1) && !mpz_cmp_ui(consensus_decision, 0UL))
 			{
 				if (opt_verbose > 1)
 				{
-					std::cerr << "INFO: Randomized Binary Consensus: #(val)" <<
-						" > N/2 && phase == 1" << std::endl;
+					std::cerr << "INFO: Randomized Large Domain Consensus:" <<
+						" #(val) > N/2 && phase == 1" << std::endl;
 				}
+				mpz_set_ui(consensus_proposal, 0UL); // undefined
 				for (std::map<size_t, size_t>::const_iterator
-					it = consensus_val_numbers.begin();
-					it != consensus_val_numbers.end(); ++it)
+					i = consensus_val_numbers.begin();
+					i != consensus_val_numbers.end(); ++i)
 				{
-					if (it->second > (peers.size() / 2))
-						consensus_proposal = it->first;
-					else
-						consensus_proposal = peers.size(); // undefined
+					if (i->second > (peers.size() / 2))
+					{
+						mpz_set(consensus_proposal, consensus_val[i->first]);
+						break;
+					}
 				}
+				consensus_val_defined = 0, consensus_val_numbers.clear();
 				for (size_t i = 0; i < consensus_val.size(); i++)
-					consensus_val[i] = peers.size(); // set all to undefined				
+					mpz_set_ui(consensus_val[i], 0UL); // set to undefined
 				consensus_phase = 2;
-				mpz_set_ui(msg, consensus_proposal + peers.size());
+				mpz_set(msg, consensus_proposal);
+				std::stringstream r; // switch RBC to consensus subprotocol
+				r << myID << " and consensus_round = " << consensus_round <<
+					" and previous decisions = " << decisions << " DECIDE";
+				rbc->recoverID(r.str());
 				rbc->Broadcast(msg); // send CONSENSUS_DECIDE message
+				rbc->unsetID(false); // return to main protocol; no FIFO-order
 			}
 			// Randomized Consensus: phase 2 (algorithm 5.13 [CGR06])
 			if ((consensus_val_defined >= (peers.size() - T_RBC)) &&
-				(consensus_phase == 2) && (consensus_decision == peers.size()))
+				(consensus_phase == 2) && !mpz_cmp_ui(consensus_decision, 0UL))
 			{
 				if (opt_verbose > 1)
 				{
-					std::cerr << "INFO: Randomized Binary Consensus: #(val)" <<
-						" >= N - f && phase == 2" << std::endl;
+					std::cerr << "INFO: Randomized Large Domain Consensus:" <<
+						" #(val) >= N - f && phase == 2" << std::endl;
 				}
 				consensus_phase = 3; // DEVIATION: "imaginary phase" [CGR06] 
 				// As "common coin" we use the so-called "Independent Choice",
 				// however, in bad cases this results in an exponential number
 				// of consensus rounds for termination.
-				unsigned char c;
-				gcry_randomize(&c, 1, GCRY_STRONG_RANDOM);
 				for (std::map<size_t, size_t>::const_iterator
-					it = consensus_val_numbers.begin();
-					it != consensus_val_numbers.end(); ++it)
+					i = consensus_val_numbers.begin();
+					i != consensus_val_numbers.end(); ++i)
 				{
-					if (it->second > T_RBC)
-						consensus_decision = it->first;
+					if (i->second > T_RBC)
+					{
+						mpz_set(consensus_decision, consensus_val[i->first]);
+						break;
+					}
 				}
-				if (consensus_decision < peers.size())
+				if (mpz_cmp_ui(consensus_decision, 0UL))
 				{
-					mpz_set_ui(msg, consensus_decision + (2 * peers.size()));
+					mpz_set(msg, consensus_decision);
+					std::stringstream r; // switch RBC to consensus subprotocol
+					r << myID << " and consensus_round = " << consensus_round <<
+						" and previous decisions = " << decisions << " DECIDED";
+					rbc->recoverID(r.str());
 					rbc->Broadcast(msg); // send DECIDED message
+					rbc->unsetID(false); // return to main protocol; no FIFO
 				}
 				else
 				{
-					consensus_proposal = c % 2; // use "common coin" uniformly
+					size_t c = 0, sc = 0, m = consensus_val_numbers.size();
+					if (m > 1)
+						c = tmcg_mpz_srandom_mod(m); // toss the "common coin"
 					for (std::map<size_t, size_t>::iterator
-						it = consensus_val_numbers.begin();
-						it != consensus_val_numbers.end(); ++it)
+						i = consensus_val_numbers.begin();
+						i != consensus_val_numbers.end(); ++i, sc++)
 					{
-						consensus_proposal = it->second;
+						mpz_set(consensus_proposal, consensus_val[i->first]);
+						if (c == sc)
+							break;
 					}
+					consensus_val_defined = 0, consensus_val_numbers.clear();
 					for (size_t i = 0; i < consensus_val.size(); i++)
-						consensus_val[i] = peers.size(); // set all to undefined
+						mpz_set_ui(consensus_val[i], 0UL); // set to undefined
 					consensus_round = consensus_round + 1;
 					consensus_phase = 1;
-					mpz_set_ui(msg, consensus_proposal);
+					mpz_set(msg, consensus_proposal);
+					std::stringstream r; // switch RBC to consensus subprotocol
+					r << myID << " and consensus_round = " << consensus_round <<
+						" and previous decisions = " << decisions << " PROPOSE";
+					rbc->recoverID(r.str());
 					rbc->Broadcast(msg); // send CONSENSUS_PROPOSE message
+					rbc->unsetID(false); // return to main protocol; no FIFO
 				}
 			}
-			rbc->unsetID(false); // return to main protocol; FIFO-order disabled
 		}
 		while ((time(NULL) < (entry + DOTS_TIME_LOOP)) && !signal_caught);
 		mpz_clear(msg);
@@ -473,12 +505,12 @@ void run_instance
 				" consensus_round = " << consensus_round <<
 				" consensus_phase = " << consensus_phase << std::endl;
 			std::cerr << "INFO: consensus_proposal = ";
-			if (consensus_proposal < peers.size())
+			if (mpz_cmp_ui(consensus_proposal, 0UL))
 				std::cerr << consensus_proposal << std::endl;
 			else
 				std::cerr << "undefined" << std::endl;
 			std::cerr << "INFO: consensus_decision = ";
-			if (consensus_decision < peers.size())
+			if (mpz_cmp_ui(consensus_decision, 0UL))
 				std::cerr << consensus_decision << std::endl;
 			else
 				std::cerr << "undefined" << std::endl;
@@ -488,7 +520,7 @@ void run_instance
 			if (opt_verbose > 1)
 			{
 				std::cerr << "INFO: consensus_val[" << i << "] = ";
-				if (consensus_val[i] < peers.size())
+				if (mpz_cmp_ui(consensus_val[i], 0UL))
 					std::cerr << consensus_val[i] << std::endl;
 				else
 					std::cerr << "undefined" << std::endl;
@@ -496,8 +528,7 @@ void run_instance
 					ping_val[i] << std::endl;
 			}
 			std::vector<std::string>::iterator it;
-			it = std::find(active_peers.begin(), active_peers.end(),
-				peers[i]);
+			it = std::find(active_peers.begin(), active_peers.end(), peers[i]);
 			if (it == active_peers.end())
 				continue;
 			if (opt_verbose > 1)
@@ -533,15 +564,15 @@ void run_instance
 				if ((WIFEXITED(wstatus) && (WEXITSTATUS(wstatus) != 0)) ||
 					!WIFEXITED(wstatus))
 				{
-					eft << "dotsd_" << hostname << "_" << sn << "_error";
-					efn << "dotsd_" << hostname << "_" << sn << "_error.txt";
+					eft << "dotsd_" << hostname << "_" << SN << "_error";
+					efn << "dotsd_" << hostname << "_" << SN << "_error.txt";
 				}
 				else
 				{
-					eft << "dotsd_" << hostname << "_" << sn << "_success";
-					efn << "dotsd_" << hostname << "_" << sn << "_success.txt";
-					oft << "dotsd_" << hostname << "_" << sn << "_stamp";
-					ofn << "dotsd_" << hostname << "_" << sn << "_stamp.asc";
+					eft << "dotsd_" << hostname << "_" << SN << "_success";
+					efn << "dotsd_" << hostname << "_" << SN << "_success.txt";
+					oft << "dotsd_" << hostname << "_" << SN << "_stamp";
+					ofn << "dotsd_" << hostname << "_" << SN << "_stamp.asc";
 					if (rename((oft.str()).c_str(), (ofn.str()).c_str()) < 0)
 						perror("WARNING: run_instance (rename)");
 				}
@@ -608,10 +639,8 @@ void run_instance
 				}
 				dkgpg_forked = false;
 				dkgpg_pid = 0;
-				sn = "";
-				// invalidate S/N agreement array
-				for (size_t i = 0; i < exec_sn_val.size(); i++)
-					mpz_set_ui(exec_sn_val[i], 0UL); // undefined
+				SN = "";
+				LEADER = 0;
 			}
 			// send SIGTERM to executed DKGPG process
 			if (dkgpg_forked && (time(NULL) > (dkgpg_time + DOTS_TIME_TERM)))
@@ -623,95 +652,59 @@ void run_instance
 				dots_kill_process(dkgpg_pid, SIGKILL, opt_verbose); 
 		}
 		// 3. start external timestamping process
-		if (!dkgpg_forked && !signal_caught && (sn.length() > 0))
+		if (!dkgpg_forked && !signal_caught && (SN.length() > 0))
 		{
-			bool agree = true;
-			for (size_t i = 1; i < exec_sn_val.size(); i++)
-			{
-				if (std::find(active_peers.begin(), active_peers.end(),
-					peers[i]) == active_peers.end())
-				{
-					continue; // ignore, this peer is inactive
-				}
-				for (size_t j = 0; j < i; j++)
-				{
-					if (std::find(active_peers.begin(),
-						active_peers.end(), peers[j]) ==
-						active_peers.end())
-					{
-						continue; // ignore, this peer is inactive
-					}
-					if (mpz_cmp(exec_sn_val[i], exec_sn_val[j]) != 0)
-						agree = false; // different values detected
-					if (mpz_cmp_ui(exec_sn_val[i], 0UL) == 0)
-						agree = false; // undefined value detected
-					if (mpz_cmp_ui(exec_sn_val[j], 0UL) == 0)
-						agree = false; // undefined value detected
-					mpz_t sn_hash, leader_hash;
-					mpz_init(sn_hash);
-					if (mpz_set_str(sn_hash, sn.c_str(), 16) == -1)
-					{
-						std::cerr << "WARNING: mpz_set_str() for sn_hash" <<
-							" failed" << std::endl;
-					}
-					mpz_init_set_ui(leader_hash, leader);
-					mpz_init(msg);
-					tmcg_mpz_shash(msg, 2, sn_hash, leader_hash);
-					mpz_clear(sn_hash);
-					mpz_clear(leader_hash);
-					if (mpz_cmp(exec_sn_val[j], msg))
-						agree = false; // wrong hash detected
-					mpz_clear(msg);
-				}
-			}
-			if (agree)
-			{
-				std::string pwlist;
-				for (size_t i = 0; i < active_peers.size(); i++)
-					pwlist += map_passwords[active_peers[i]] + "/";
-				dots_start_process(dkgpg_cmd, active_peers, hostname,
-					pwlist, URI, opt_W, dkgpg_env, dkgpg_pid,
-					dkgpg_forked, dkgpg_time, dkgpg_fd_in,
-					dkgpg_fd_out, dkgpg_fd_err, peers[leader],
-					DOTS_MHD_PORT + leader, sn, opt_verbose);
-			}
+			std::string pwlist;
+			for (size_t i = 0; i < active_peers.size(); i++)
+				pwlist += map_passwords[active_peers[i]] + "/";
+			dots_start_process(dkgpg_cmd, active_peers, hostname,
+				pwlist, URI, opt_W, dkgpg_env, dkgpg_pid,
+				dkgpg_forked, dkgpg_time, dkgpg_fd_in,
+				dkgpg_fd_out, dkgpg_fd_err, peers[LEADER],
+				DOTS_MHD_PORT + LEADER, SN, opt_verbose);
 		}
 		// 3. handle events and request work load
-		if (!dkgpg_forked && !signal_caught)
+		if (!dkgpg_forked && !signal_caught && (SN.length() == 0))
 		{
-			// Decide event: choose a (new) leader
-			if (trigger_decide && (consensus_decision < 2))
+			// Decide event
+			if (trigger_decide)
 			{
 				trigger_decide = false;
 				if (opt_verbose > 1)
 				{
-					std::cerr << "INFO: Decide event with" <<
-						" decisions = " << decisions << "," << 
-						" leader = " << leader << ", and" <<
+					std::cerr << "INFO: Decide event at" <<
+						" decisions = " << decisions << " and" << 
 						" consensus_decision = " << consensus_decision <<
 						std::endl;
 				}
-				if ((leader_change && (consensus_decision == 0)) ||
-					(!leader_change && (consensus_decision == 1)))
+				if (mpz_cmp_ui(consensus_decision, 256UL) >= 0)
 				{
-					std::cerr << "WARNING: diverging state detected" <<
-						" with leader_change = " << leader_change <<
-						std::endl;
+					char buf[1024];
+					memset(buf, 0, sizeof(buf));
+					LEADER = mpz_get_ui(consensus_decision) % 256;
+					mpz_sub_ui(consensus_decision, consensus_decision, LEADER);
+					mpz_fdiv_q_ui(consensus_decision, consensus_decision, 256UL);
+					mpz_get_str(buf, 16, consensus_decision);
+					for (size_t i = 0; i < sizeof(buf); i++)
+					{
+						if (buf[i] == 'a')
+							buf[i] = 'A';
+						else if (buf[i] == 'b')
+							buf[i] = 'B';
+						else if (buf[i] == 'c')
+							buf[i] = 'C';
+						else if (buf[i] == 'd')
+							buf[i] = 'D';
+						else if (buf[i] == 'e')
+							buf[i] = 'E';
+						else if (buf[i] == 'f')
+							buf[i] = 'F';
+					}
+					SN = buf;
 				}
 				decisions++;
-				leader += consensus_decision;
-				if (leader == peers.size())
-					leader = 0;
-				if (consensus_decision > 0)
-				{
-					// start new round with empty S/N and a new leader
-					sn = "";
-					leader_change = false;
-					// invalidate S/N agreement array
-					for (size_t i = 0; i < exec_sn_val.size(); i++)
-						mpz_set_ui(exec_sn_val[i], 0UL); // undefined
-				}
 				consensus_phase = 0;
+				sn = "";
 			}
 			else
 			{
@@ -729,56 +722,33 @@ void run_instance
 				}
 				if (max > (decisions+1))
 				{
-// FIXME: recover with adjusted counter decisions
+// TODO: recover with adjusted counter decisions
 				}
 			}
-			// request work load from active leader
-			std::string type;
-			if (std::find(active_peers.begin(), active_peers.end(),
-				peers[leader]) == active_peers.end())
+			// request work load from a new random leader who is active
+			size_t sc = 0;
+			while ((sn.length() == 0) && (++sc < 256))
 			{
-				std::cerr << "WARNING: leader \"" <<
-					peers[leader] << "\" is inactive" << std::endl;
-				leader_change = true; // inactive -> change leader
-			}
-			else if (dots_http_request(peers[leader], DOTS_MHD_PORT + leader,
-				"/start", sn, type, opt_verbose))
-			{
-				if (opt_verbose > 2)
+				leader = tmcg_mpz_wrandom_ui() % peers.size();
+				if (std::find(active_peers.begin(), active_peers.end(),
+					peers[leader]) == active_peers.end())
 				{
-					std::cerr << "INFO: HTTP response of type = \"" <<
-						type << "\" from leader " << leader << " " << sn <<
-						std::endl;
+					continue;
 				}
-				if (type != "text/plain")
-					std::cerr << "WARNING: invalid content type" << std::endl;
-				if (sn.length() > 0)
+				std::string type;
+				if (dots_http_request(peers[leader], DOTS_MHD_PORT + leader,
+					"/start", sn, type, opt_verbose))
 				{
-					mpz_t sn_hash, leader_hash;
-					mpz_init(sn_hash);
-					if (mpz_set_str(sn_hash, sn.c_str(), 16) == -1)
+					if (opt_verbose > 2)
 					{
-						std::cerr << "WARNING: mpz_set_str() for sn_hash" <<
-							" failed" << std::endl;
+						std::cerr << "INFO: HTTP response of type = " << type <<
+							" from leader " << leader << " contains" <<
+							" sn = " << sn << std::endl;
 					}
-					mpz_init_set_ui(leader_hash, leader);
-					mpz_init(msg);
-					tmcg_mpz_shash(msg, 2, sn_hash, leader_hash);
-					mpz_clear(sn_hash);
-					mpz_clear(leader_hash);
-					std::stringstream estr; // switch RBC to exec subprotocol
-					estr << myID << " exec subprotocol with previous" <<
-						" decisions = " << decisions;
-					rbc->recoverID(estr.str());
-					rbc->Broadcast(msg); // send EXEC_SN message
-					rbc->unsetID(false); // return to main protocol; no FIFO
-					mpz_clear(msg);
 				}
 				else
-					leader_change = true; // no work load -> change leader
+					sc += 64;
 			}
-			else
-				leader_change = true; // HTTP request failed -> change leader
 		}
 		// 4. maintain active_peers array
 		time_t current_time = time(NULL);
@@ -809,7 +779,8 @@ void run_instance
 		if (opt_verbose > 1)
 		{
 			std::cerr << "INFO: |active_peers| = " << active_peers.size() <<
-				" leader = " << leader << " sn = " << sn << std::endl;
+				" leader = " << leader << " sn = " << sn <<
+				" LEADER = " << LEADER << " SN = " << SN << std::endl;
 		}
 	}
 	while (!signal_caught);
@@ -827,11 +798,13 @@ void run_instance
 		mpz_clear(ping_val[i]);
 		delete [] ping_val[i];
 	}
-	for (size_t i = 0; i < exec_sn_val.size(); i++)
+	for (size_t i = 0; i < consensus_val.size(); i++)
 	{
-		mpz_clear(exec_sn_val[i]);
-		delete [] exec_sn_val[i];
+		mpz_clear(consensus_val[i]);
+		delete [] consensus_val[i];
 	}
+	mpz_clear(consensus_proposal);
+	mpz_clear(consensus_decision);
 	// release RBC channel and P2P channels
 	delete rbc;
 	if (opt_verbose)

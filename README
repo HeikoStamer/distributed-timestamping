@@ -25,11 +25,11 @@ Requirements
     https://savannah.nongnu.org/projects/dkgpg
   * Toolbox for Mental Card Games (LibTMCG), version >= 1.4.0
     https://savannah.nongnu.org/projects/libtmcg
-  * GNU Multiple Precision Arithmetic Library (libgmp), version >= 4.2.0,
+  * GNU Multiple Precision Arithmetic Library (libgmp), version >= 6.1.2,
     https://gmplib.org/
-  * GNU Crypto Library (libgcrypt), version >= 1.6.0,
+  * GNU Crypto Library (libgcrypt), version >= 1.8.0,
     https://gnupg.org/download/index.html
-  * GNU Privacy Guard Error Code Library (libgpg-error), version >= 1.12,
+  * GNU Privacy Guard Error Code Library (libgpg-error), version >= 1.27,
     https://gnupg.org/download/index.html
   * GNU Libmicrohttpd, version >= 0.9.47
     https://www.gnu.org/software/libmicrohttpd/

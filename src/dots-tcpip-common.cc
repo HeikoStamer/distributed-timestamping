@@ -286,7 +286,8 @@ static int tcpip_mhd_callback
 			(strncmp(url, "/log", 4) != 0) &&
 			(strncmp(url, "/submit", 7) != 0) &&
 			(strncmp(url, "/input", 6) != 0) &&
-			(strncmp(url, "/confirm", 8) != 0))
+			(strncmp(url, "/confirm", 8) != 0) &&
+			(strcmp(url, "/favicon.ico") != 0))
 		{
 			std::cerr << "WARNING: got request for unknown URL" << std::endl;
 		}
@@ -335,10 +336,11 @@ static int tcpip_mhd_callback
 			std::cerr << "WARNING: HTTP client IP address not available" <<
 				std::endl;
 		}
-		std::cerr << "INFO: " << version << "-" << method << " request" <<
-			" for URL \"" << url << "\" from address " << ipaddr << std::endl;
-		if (opt_verbose > 1)
+		if (opt_verbose > 2)
 		{
+			std::cerr << "INFO: " << version << "-" << method << " request" <<
+				" for URL \"" << url << "\" from address " << ipaddr <<
+				std::endl;
 			MHD_get_connection_values(con, MHD_HEADER_KIND,
 				&tcpip_mhd_kv_print, NULL);
 		}
@@ -500,6 +502,14 @@ static int tcpip_mhd_callback
 					(void*)tcpip_mhd_notpage,
 					MHD_RESPMEM_PERSISTENT);
 			}
+		}
+		else if (strcmp(url, "/favicon.ico") != 0)
+		{
+			// TODO: deliver favicon
+			res = MHD_create_response_from_buffer(
+				strlen(tcpip_mhd_defaultpage),
+				(void*)tcpip_mhd_defaultpage,
+				MHD_RESPMEM_PERSISTENT);
 		}
 		else
 		{
