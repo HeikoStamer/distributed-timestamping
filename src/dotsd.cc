@@ -72,12 +72,7 @@ std::string                        passwords, hostname, port, URI;
 std::string                        policyfilename;
 std::stringstream                  policyfile;
 std::map<std::string, std::string> map_passwords;
-
-
 int                                opt_verbose = 0;
-char                               *opt_passwords = NULL;
-char                               *opt_hostname = NULL;
-char                               *opt_URI = NULL;
 unsigned long int                  opt_p = 56000, opt_W = 5;
 
 bool ctrl
@@ -916,22 +911,19 @@ int main
 		{
 			size_t idx = ++i;
 			if ((arg.find("-H") == 0) && (idx < (size_t)(argc - 1)) &&
-				(opt_hostname == NULL))
+				(hostname.length() == 0))
 			{
 				hostname = argv[i+1];
-				opt_hostname = (char*)hostname.c_str();
 			}
 			if ((arg.find("-P") == 0) && (idx < (size_t)(argc - 1)) &&
-				(opt_passwords == NULL))
+				(passwords.length() == 0))
 			{
 				passwords = argv[i+1];
-				opt_passwords = (char*)passwords.c_str();
 			}
 			if ((arg.find("-U") == 0) && (idx < (size_t)(argc - 1)) &&
-				(opt_URI == NULL))
+				(URI.length() == 0))
 			{
 				URI = argv[i+1];
-				opt_URI = (char*)URI.c_str();
 			}
 			if ((arg.find("-p") == 0) && (idx < (size_t)(argc - 1)) &&
 				(port.length() == 0))
