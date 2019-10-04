@@ -339,6 +339,7 @@ bool dots_start_process
 			char *dkgpg_arg[dkgpg_args.size() + 1];
 			for (size_t i = 0; i < dkgpg_args.size(); i++)
 			{
+std::cerr << "BUG: dkgpg_args[" << i << "] = " << dkgpg_args[i] << std::endl;
 				dkgpg_arg[i] = (char*)dkgpg_args[i].c_str();
 				dkgpg_arg[i+1] = NULL;
 			}
