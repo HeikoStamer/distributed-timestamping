@@ -683,7 +683,7 @@ void tcpip_init
 		tcpip_peer2pipe[peers[i]] = i;
 		tcpip_pipe2peer[i] = peers[i];
 	}
-	pid[tcpip_peer2pipe[tcpip_thispeer]] = 424242; // indicator init state
+	pid[tcpip_peer2pipe[tcpip_thispeer]] = 424242; // indicator of init state
 	// initialize random S/N seed
 	tmcg_openpgp_byte_t rand[32];
 	gcry_randomize(rand, sizeof(rand), GCRY_STRONG_RANDOM);
