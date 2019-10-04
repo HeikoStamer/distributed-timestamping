@@ -328,20 +328,20 @@ void run_instance
 				mpz_set(ping_val[p], msg);
 				ping[p] = time(NULL);
 			}
-			std::stringstream rp; // switch RBC to consensus subprotocol
-			rp << myID << " and consensus_round = " << consensus_round <<
-				" and previous decisions = " << decisions << " PROPOSE";
-			rbc->recoverID(rp.str());
-			if (rbc->Deliver(msg, p, s, DOTS_TIME_POLL))
+			if (consensus_phase == 1)
 			{
-				if (opt_verbose > 1)
+				std::stringstream rp; // switch RBC to consensus subprotocol
+				rp << myID << " and consensus_round = " << consensus_round <<
+					" and previous decisions = " << decisions << " PROPOSE";
+				rbc->recoverID(rp.str());
+				if (rbc->Deliver(msg, p, s, DOTS_TIME_POLL))
 				{
-					std::cerr << "INFO: P_" << whoami << " received" <<
-						" CONSENSUS_PROPOSE with value " << msg <<
-						" from P_" << p << std::endl;
-				}
-				if (consensus_phase == 1)
-				{
+					if (opt_verbose > 1)
+					{
+						std::cerr << "INFO: P_" << whoami << " received" <<
+							" CONSENSUS_PROPOSE with value " << msg <<
+							" from P_" << p << std::endl;
+					}
 					mpz_set(consensus_val[p], msg);
 					// Prepare array for Large Domain (algorithm 5.14 [CGR06])
 					if (mpz_cmp_ui(consensus_val[p], 0UL))
@@ -363,28 +363,26 @@ void run_instance
 						}
 					}
 				}
-				else
-					rbc->QueueFrom(msg, p);
+				rbc->unsetID(false); // return to main protocol; FIFO-order disabled
 			}
-			rbc->unsetID(false); // return to main protocol; FIFO-order disabled
-			std::stringstream rd; // switch RBC to consensus subprotocol
-			rd << myID << " and consensus_round = " << consensus_round <<
-				" and previous decisions = " << decisions << " DECIDE";
-			rbc->recoverID(rd.str());
-			if (rbc->Deliver(msg, p, s, DOTS_TIME_POLL))
+			else if (consensus_phase == 2)
 			{
-				if (opt_verbose > 1)
+				std::stringstream rd; // switch RBC to consensus subprotocol
+				rd << myID << " and consensus_round = " << consensus_round <<
+					" and previous decisions = " << decisions << " DECIDE";
+				rbc->recoverID(rd.str());
+				if (rbc->Deliver(msg, p, s, DOTS_TIME_POLL))
 				{
-					std::cerr << "INFO: P_" << whoami << " received" <<
-						" CONSENSUS_DECIDE with value " << msg <<
-						" from P_" << p << std::endl;
-				}
-				if (consensus_phase == 2)
+					if (opt_verbose > 1)
+					{
+						std::cerr << "INFO: P_" << whoami << " received" <<
+							" CONSENSUS_DECIDE with value " << msg <<
+							" from P_" << p << std::endl;
+					}
 					mpz_set(consensus_val[p], msg);
-				else
-					rbc->QueueFrom(msg, p);
+				}
+				rbc->unsetID(false); // return to main protocol; FIFO-order disabled
 			}
-			rbc->unsetID(false); // return to main protocol; FIFO-order disabled
 			std::stringstream rdd; // switch RBC to consensus subprotocol
 			rdd << myID << " and consensus_round = " << consensus_round <<
 				" and previous decisions = " << decisions << " DECIDED";
@@ -767,10 +765,20 @@ void run_instance
 				}
 			}
 			// request work load from a new random leader who is active
-			size_t sc = 0;
-			while ((sn.length() == 0) && (++sc < 256))
+			std::vector<size_t> pi;
+			for (size_t i = 0; i < peers.size(); i++)
+				pi.push_back(i);
+			for (size_t i = 0; i < (peers.size() - 1); i++)
 			{
-				leader = tmcg_mpz_wrandom_ui() % peers.size();
+				// randomize permutation (Knuth or Fisher-Yates algorithm)
+				size_t tmp = pi[i];
+				size_t rnd = i + (size_t)tmcg_mpz_srandom_mod(peers.size() - i);
+				pi[i] = pi[rnd];
+				pi[rnd] = tmp;
+			}
+			for (size_t i = 0; i < pi.size(); i++)
+			{
+				leader = pi[i];
 				if (std::find(active_peers.begin(), active_peers.end(),
 					peers[leader]) == active_peers.end())
 				{
@@ -786,11 +794,13 @@ void run_instance
 							" from leader " << leader << " contains" <<
 							" sn = " << sn << std::endl;
 					}
+					if (sn == SN)
+						sn = ""; // don't reassign already processed S/N
+					if (sn.length() > 0)
+						break;
 				}
 				else
-					sc += 64;
-				if (sn == SN)
-					sn = ""; // don't reassign already processed S/N
+					sn = ""; // request failed
 			}
 		}
 		// 4. maintain active_peers array
