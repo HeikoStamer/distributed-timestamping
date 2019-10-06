@@ -316,6 +316,19 @@ void run_instance
 			// inner loop: handle control messages from parent
 			if (ctrl(ctrl_buf, sizeof(ctrl_buf), ctrl_len, aiou, signal_caught))
 				continue;
+			// inner loop: check for bad_auth flag
+			for (size_t i = 0; i < aiou->bad_auth.size(); i++)
+			{
+				if (aiou->bad_auth[i])
+				{
+					if (opt_verbose > 1)
+					{
+						std::cerr << "INFO: P_" << whoami << " detected" <<
+							" bad authentication of stream from P_" << i <<
+							std::endl;
+					}
+				}
+			}
 			// inner loop: waiting for messages on RBC channel
 			size_t p = 0, s = aiounicast::aio_scheduler_roundrobin;
 			if (rbc->Deliver(msg, p, s, DOTS_TIME_POLL))
