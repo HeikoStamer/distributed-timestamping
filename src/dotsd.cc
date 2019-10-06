@@ -363,7 +363,7 @@ void run_instance
 						}
 					}
 				}
-				rbc->unsetID(false); // return to main protocol; FIFO-order disabled
+				rbc->unsetID(false); // return to main protocol; no FIFO-order
 			}
 			else if (consensus_phase == 2)
 			{
@@ -381,7 +381,7 @@ void run_instance
 					}
 					mpz_set(consensus_val[p], msg);
 				}
-				rbc->unsetID(false); // return to main protocol; FIFO-order disabled
+				rbc->unsetID(false); // return to main protocol; no FIFO-order
 			}
 			std::stringstream rdd; // switch RBC to consensus subprotocol
 			rdd << myID << " and consensus_round = " << consensus_round <<
