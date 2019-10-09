@@ -1671,6 +1671,7 @@ int tcpip_io
 				auth_sent[who] = false;
 				tcpip_pipe2socket_in[who] = tcpip_pipe2socket_in_auth[who];
 				tcpip_pipe2socket_in_auth.erase(who);
+				len_in[who] = 0;
 			}
 			else
 			{
@@ -1689,6 +1690,7 @@ int tcpip_io
 				tcpip_broadcast_pipe2socket_in[who] =
 					tcpip_broadcast_pipe2socket_in_auth[who];
 				tcpip_broadcast_pipe2socket_in_auth.erase(who);
+				broadcast_len_in[who] = 0;
 			}
 			else
 			{
@@ -2782,6 +2784,7 @@ int tcpip_io
 							fd << ") successful" << std::endl;
 					}
 					tcpip_pipe2socket_out[i] = fd;
+					len_out[i] = 0;
 					std::stringstream ctrl_msg; // create control message
 					ctrl_msg << "CTRL_AIO_RESET_OUT:" << i << std::endl;
 					ctrl_buf.push_back(ctrl_msg.str());
@@ -2849,6 +2852,7 @@ int tcpip_io
 							" successful" << std::endl;
 					}
 					tcpip_broadcast_pipe2socket_out[i] = fd;
+					broadcast_len_out[i] = 0;
 					std::stringstream ctrl_msg; // create control message
 					ctrl_msg << "CTRL_AIO_BROADCAST_RESET_OUT:" << i <<
 						std::endl;
