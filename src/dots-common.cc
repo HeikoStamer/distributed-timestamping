@@ -32,6 +32,11 @@ bool dots_http_request
 	 std::string &type,
 	 const int opt_verbose)
 {
+	if (opt_verbose > 1)
+	{
+		std::cerr << "INFO: HTTP request url = \"" << url << "\" from host" <<
+			" \"" << hostname << "\"" << std::endl;
+	}
 	struct addrinfo h = { 0, 0, 0, 0, 0, 0, 0, 0 }, *r, *rp;
 	h.ai_family = AF_UNSPEC;
 	h.ai_socktype = SOCK_STREAM;
