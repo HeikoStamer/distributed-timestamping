@@ -1526,12 +1526,15 @@ int tcpip_io
 	char buf_out[peers.size()][tcpip_pipe_buffer_size];
 	char broadcast_buf_out[peers.size()][tcpip_pipe_buffer_size];
 	std::vector<size_t> len_in, broadcast_len_in, len_out, broadcast_len_out;
+	std::vector<time_t> wait_in, broadcast_wait_in;
 	for (size_t i = 0; i < peers.size(); i++)
 	{
 		len_in.push_back(0);
 		broadcast_len_in.push_back(0);
 		len_out.push_back(0);
 		broadcast_len_out.push_back(0);
+		wait_in.push_back(0);
+		broadcast_wait_in.push_back(0);
 	}
 	std::vector<size_t> reconnects;
 	std::map<size_t, time_t> reconnects_ttl;
@@ -1672,6 +1675,7 @@ int tcpip_io
 				tcpip_pipe2socket_in[who] = tcpip_pipe2socket_in_auth[who];
 				tcpip_pipe2socket_in_auth.erase(who);
 				len_in[who] = 0;
+				wait_in[who] = time(NULL);
 			}
 			else
 			{
@@ -1691,6 +1695,7 @@ int tcpip_io
 					tcpip_broadcast_pipe2socket_in_auth[who];
 				tcpip_broadcast_pipe2socket_in_auth.erase(who);
 				broadcast_len_in[who] = 0;
+				broadcast_wait_in[who] = time(NULL);
 			}
 			else
 			{
@@ -1790,14 +1795,18 @@ int tcpip_io
 				return -201;
 			}
 		}
+		time_t ct = time(NULL);
 		for (tcpip_mci_t pi = tcpip_pipe2socket_in.begin();
 			pi != tcpip_pipe2socket_in.end(); ++pi)
 		{
 			if (pi->second < FD_SETSIZE)
 			{
-				FD_SET(pi->second, &rfds);
-				if (pi->second > maxfd)
-					maxfd = pi->second;
+				if ((ct - wait_in[pi->first]) > DOTS_TIME_SETUP)
+				{
+					FD_SET(pi->second, &rfds);
+					if (pi->second > maxfd)
+						maxfd = pi->second;
+				}
 			}
 			else
 			{
@@ -1811,9 +1820,12 @@ int tcpip_io
 		{
 			if (pi->second < FD_SETSIZE)
 			{
-				FD_SET(pi->second, &rfds);
-				if (pi->second > maxfd)
-					maxfd = pi->second;
+				if ((ct - broadcast_wait_in[pi->first]) > DOTS_TIME_SETUP)
+				{
+					FD_SET(pi->second, &rfds);
+					if (pi->second > maxfd)
+						maxfd = pi->second;
+				}
 			}
 			else
 			{
