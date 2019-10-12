@@ -72,6 +72,7 @@ bool dots_http_request
 			if (fcntl(s, F_SETFL) < 0)
 				perror("WARNING: dots_http_request (fcntl)");
 		}
+// TODO: use connect and other ops inside select(2) to decrease the long timeout
 		if (connect(s, rp->ai_addr, rp->ai_addrlen) < 0)
 		{
 			if (errno != ECONNREFUSED)
