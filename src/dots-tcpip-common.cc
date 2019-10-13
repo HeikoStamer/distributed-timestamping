@@ -1451,8 +1451,20 @@ bool tcpip_work
 	}
 	if (!started && (next.length() > 0))
 	{
-		current = next;
-		tcpip_sn2status[current] = DOTS_STATUS_STARTED;
+		TMCG_OpenPGP_Signature *signature = NULL;
+		bool parse_ok = CallasDonnerhackeFinneyShawThayerRFC4880::
+			SignatureParse(tcpip_sn2signature[next], 0, signature);
+		if (parse_ok)
+		{
+			delete signature;
+			tcpip_sn2status[next] = DOTS_STATUS_STARTED;
+			current = next;
+		}
+		else
+		{
+			tcpip_sn2status[next] = DOTS_STATUS_FAILED;
+			tcpip_sn2time_failed[next] = time(NULL);
+		}
 	}
 	if (started && (current.length() > 0))
 	{
