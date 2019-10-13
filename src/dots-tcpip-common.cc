@@ -1413,7 +1413,8 @@ bool tcpip_work
 			if (st < (current_time - DOTS_TIME_UNCONFIRMED))
 				cleanup_submitted.push_back(q->first);
 		}
-		else if (q->second == DOTS_STATUS_FAILED)
+		else if ((q->second == DOTS_STATUS_FAILED) ||
+			(q->second == DOTS_STATUS_REJECTED))
 		{
 			time_t st = tcpip_sn2time_failed[q->first];
 			if (st < (current_time - DOTS_TIME_LOG))
@@ -1462,7 +1463,7 @@ bool tcpip_work
 		}
 		else
 		{
-			tcpip_sn2status[next] = DOTS_STATUS_FAILED;
+			tcpip_sn2status[next] = DOTS_STATUS_REJECTED;
 			tcpip_sn2time_failed[next] = time(NULL);
 		}
 	}

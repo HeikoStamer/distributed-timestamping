@@ -46,6 +46,7 @@
 		DOTS_STATUS_STARTED             = 3,
 		DOTS_STATUS_STAMPED             = 4,
 		DOTS_STATUS_REMOVED				= 5,
+		DOTS_STATUS_REJECTED			= 6,
 		DOTS_STATUS_FAILED              = 42,
 	};
 
