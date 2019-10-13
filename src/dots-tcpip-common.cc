@@ -213,7 +213,7 @@ static int tcpip_mhd_iterate_post
 		(tcpip_mhd_connection_info*)cls;
 	if (strcmp(key, "policycheck") == 0)
 	{
-		if ((size > 0) && (size <= 80))
+		if ((off == 0) && (size >= 14) && (size <= 80))
 		{
 			if (strncmp(data, "policyaccepted", 14) == 0)
 				con_info->policy_accepted = true; 
@@ -222,17 +222,21 @@ static int tcpip_mhd_iterate_post
 	}
 	else if (strcmp(key, "signature") == 0)
 	{
-		if ((size > 0) && (size <= DOTS_MAX_SIG_LENGTH))
-		{
-			if (con_info->sig == NULL)
-				con_info->sig = (char*)malloc(DOTS_MAX_SIG_LENGTH + 1);
-			if (con_info->sig == NULL)
-				return MHD_NO;
+std::cerr << "POST-process key signature: off = " << off << std::endl;
+std::cerr << "POST-process key signature: size = " << size << std::endl;
+		if ((off == 0) && (con_info->sig == NULL))
+			con_info->sig = (char*)malloc(DOTS_MAX_SIG_LENGTH + 1);
+		if (con_info->sig == NULL)
+			return MHD_NO;
+		if (off == 0)
 			memset(con_info->sig, 0, DOTS_MAX_SIG_LENGTH + 1);
-			memcpy(con_info->sig, data, size);
-		}
+		if ((size > 0) && ((off + size) <= DOTS_MAX_SIG_LENGTH))
+			memcpy(con_info->sig + off, data, size);
 		else
+		{
+			free(con_info->sig);
 			con_info->sig = NULL;
+		}
 		return MHD_YES;
 	}
 	return MHD_YES;
@@ -301,7 +305,7 @@ static int tcpip_mhd_callback
 		con_info->len = 0;
 		if (strcmp(method, "POST") == 0)
 		{
-			con_info->pp = MHD_create_post_processor(con, 512,
+			con_info->pp = MHD_create_post_processor(con, 4096,
 				tcpip_mhd_iterate_post, (void *)con_info);
 			if (con_info->pp == NULL)
 			{
@@ -530,14 +534,20 @@ static int tcpip_mhd_callback
 		if (*upload_data_size > 0)
 		{
 			if (con_info->len < DOTS_MAX_SIG_LENGTH)
+			{
+				if (opt_verbose > 1)
+				{
+					std::cerr << "INFO: upload_data_size = " <<
+						*upload_data_size << std::endl;
+				}
 				con_info->len += *upload_data_size;
+			}
 			else
 			{
 				std::cerr << "WARNING: upload limit exceeded" << std::endl;
 				return MHD_NO; // upload limit exceeded
 			}
-			MHD_post_process(con_info->pp,
-				upload_data, *upload_data_size);
+			MHD_post_process(con_info->pp, upload_data, *upload_data_size);
 			*upload_data_size = 0;
 			return MHD_YES;
 		}
