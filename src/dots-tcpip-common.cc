@@ -222,8 +222,6 @@ static int tcpip_mhd_iterate_post
 	}
 	else if (strcmp(key, "signature") == 0)
 	{
-std::cerr << "POST-process key signature: off = " << off << std::endl;
-std::cerr << "POST-process key signature: size = " << size << std::endl;
 		if ((off == 0) && (con_info->sig == NULL))
 			con_info->sig = (char*)malloc(DOTS_MAX_SIG_LENGTH + 1);
 		if (con_info->sig == NULL)
