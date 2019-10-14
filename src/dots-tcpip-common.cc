@@ -1097,6 +1097,7 @@ bool tcpip_connect
 			perror("WARNING: tcpip_connect (socket)");
 			continue; // try next address
 		}
+// TODO: reduce connection timeout by using select(2)
 		if (connect(sockfd, rp->ai_addr, rp->ai_addrlen) < 0)
 		{
 			if (errno != ECONNREFUSED)
