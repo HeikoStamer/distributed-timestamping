@@ -34,7 +34,7 @@ bool dots_http_request
 {
 	if (opt_verbose > 1)
 	{
-		std::cerr << "INFO: HTTP request url = \"" << url << "\" from host" <<
+		std::cerr << "INFO: request http://" << url << " from host" <<
 			" \"" << hostname << "\"" << std::endl;
 	}
 	struct addrinfo h = { 0, 0, 0, 0, 0, 0, 0, 0 }, *r, *rp;
@@ -72,49 +72,93 @@ bool dots_http_request
 			if (fcntl(s, F_SETFL) < 0)
 				perror("WARNING: dots_http_request (fcntl)");
 		}
-// TODO: use connect and other ops inside select(2) to decrease the long timeout
 		if (connect(s, rp->ai_addr, rp->ai_addrlen) < 0)
 		{
-			if (errno != ECONNREFUSED)
-				perror("WARNING: dots_http_request (connect)");					
-			if (close(s) < 0)
-				perror("WARNING: dots_http_request (close)");
-			continue; // try next address
-		}
-		else
-		{
-			char hbuf[NI_MAXHOST], sbuf[NI_MAXSERV];
-			memset(hbuf, 0, sizeof(hbuf));
-			memset(sbuf, 0, sizeof(sbuf));
-			if ((ret = getnameinfo(rp->ai_addr, rp->ai_addrlen,
-				hbuf, sizeof(hbuf), sbuf, sizeof(sbuf),
-				NI_NUMERICHOST | NI_NUMERICSERV)) != 0)
+			if ((errno == EINPROGRESS) && (s < FD_SETSIZE))
 			{
-				std::cerr << "ERROR: resolving \"" << hostname << "\" failed: ";
-				if (ret == EAI_SYSTEM)
-					perror("dots_http_request (getnameinfo)");
-				else
-					std::cerr << gai_strerror(ret);
-				std::cerr << std::endl;
+				while (1)
+				{
+					fd_set wfds;
+					FD_ZERO(&wfds);
+					FD_SET(s, &wfds);
+					struct timeval tv;
+					tv.tv_sec = 3;
+					tv.tv_usec = 0;
+					int retval = select((s + 1), NULL, &wfds, NULL, &tv);
+					if (retval < 0)
+					{
+						if ((errno != EAGAIN) && (errno != EINTR))
+						{
+							perror("ERROR: dots_http_request (select)");
+							return false;
+						}
+					}
+					else if (retval > 0)
+					{
+						socklen_t slen = sizeof(int);
+						int serr = 0;
+						if (getsockopt(s, SOL_SOCKET, SO_ERROR, (void*)(&serr),
+							&slen) < 0)
+						{ 
+							perror("ERROR: dots_http_request (getsockopt)");
+							return false;
+						}
+						if (serr != 0)
+						{
+							errno = serr;
+							perror("ERROR: dots_http_request (connect)");
+							return false;
+						}
+						else
+							break; // success
+					}
+					else
+					{
+						return false; // timeout
+					}
+				}
+			}
+			else
+			{
+				if (errno != ECONNREFUSED)
+					perror("WARNING: dots_http_request (connect)");					
 				if (close(s) < 0)
 					perror("WARNING: dots_http_request (close)");
-				freeaddrinfo(r);
-				return false;
+				continue; // try next address
 			}
-			if (opt_verbose > 2)
-			{
-				std::cerr << "INFO: resolved hostname \"" <<
-					hostname << "\" to address " << hbuf << std::endl;
-			}
-			if (opt_verbose > 2)
-			{
-				std::cerr << "INFO: connected to host \"" <<
-					hostname << "\" on port " << port << std::endl;
-			}
-			break; // on success: leave the loop
 		}
+		char hbuf[NI_MAXHOST], sbuf[NI_MAXSERV];
+		memset(hbuf, 0, sizeof(hbuf));
+		memset(sbuf, 0, sizeof(sbuf));
+		if ((ret = getnameinfo(rp->ai_addr, rp->ai_addrlen, hbuf, sizeof(hbuf),
+			sbuf, sizeof(sbuf), NI_NUMERICHOST | NI_NUMERICSERV)) != 0)
+		{
+			std::cerr << "ERROR: resolving \"" << hostname << "\" failed: ";
+			if (ret == EAI_SYSTEM)
+				perror("dots_http_request (getnameinfo)");
+			else
+				std::cerr << gai_strerror(ret);
+			std::cerr << std::endl;
+			if (close(s) < 0)
+				perror("WARNING: dots_http_request (close)");
+			freeaddrinfo(r);
+			return false;
+		}
+		if (opt_verbose > 2)
+		{
+			std::cerr << "INFO: resolved hostname \"" <<
+				hostname << "\" to address " << hbuf << std::endl;
+		}
+		if (opt_verbose > 2)
+		{
+			std::cerr << "INFO: connected to host \"" <<
+				hostname << "\" on port " << port << std::endl;
+		}
+		break; // on success: leave the loop
 	}
 	freeaddrinfo(r);
+	if (rp == NULL)
+		return false;
 	std::stringstream req;
 	req << "GET " << url << " HTTP/1.1" << "\r\n" <<
 		"Host: " << hostname << "\r\n" <<

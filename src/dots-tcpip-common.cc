@@ -990,13 +990,12 @@ bool tcpip_connect_auth
 	{
 		// select(2) -- do everything with asynchronous I/O
 		fd_set wfds;
-		struct timeval tv;
-		int retval;
 		FD_ZERO(&wfds);
 		FD_SET(fd, &wfds);
+		struct timeval tv;
 		tv.tv_sec = 0;
 		tv.tv_usec = 1000; // sleep only for 1000us = 1ms
-		retval = select((fd + 1), NULL, &wfds, NULL, &tv);
+		int retval = select((fd + 1), NULL, &wfds, NULL, &tv);
 		if (retval < 0)
 		{
 			if (errno == EINTR)
