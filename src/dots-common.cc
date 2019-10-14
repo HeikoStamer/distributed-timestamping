@@ -33,10 +33,7 @@ bool dots_http_request
 	 const int opt_verbose)
 {
 	if (opt_verbose > 1)
-	{
-		std::cerr << "INFO: request http://" << url << " from host" <<
-			" \"" << hostname << "\"" << std::endl;
-	}
+		std::cerr << "INFO: request http://" << hostname << url << std::endl;
 	struct addrinfo h = { 0, 0, 0, 0, 0, 0, 0, 0 }, *r, *rp;
 	h.ai_family = AF_UNSPEC;
 	h.ai_socktype = SOCK_STREAM;
@@ -90,6 +87,9 @@ bool dots_http_request
 						if ((errno != EAGAIN) && (errno != EINTR))
 						{
 							perror("ERROR: dots_http_request (select)");
+							if (close(s) < 0)
+								perror("WARNING: dots_http_request (close)");
+							freeaddrinfo(r);
 							return false;
 						}
 					}
@@ -101,19 +101,28 @@ bool dots_http_request
 							&slen) < 0)
 						{ 
 							perror("ERROR: dots_http_request (getsockopt)");
+							if (close(s) < 0)
+								perror("WARNING: dots_http_request (close)");
+							freeaddrinfo(r);
 							return false;
 						}
 						if (serr != 0)
 						{
 							errno = serr;
 							perror("ERROR: dots_http_request (connect)");
+							if (close(s) < 0)
+								perror("WARNING: dots_http_request (close)");
+							freeaddrinfo(r);
 							return false;
 						}
 						else
-							break; // success
+							break; // success; leave while-loop
 					}
 					else
 					{
+						if (close(s) < 0)
+							perror("WARNING: dots_http_request (close)");
+						freeaddrinfo(r);
 						return false; // timeout
 					}
 				}
