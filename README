@@ -37,7 +37,7 @@ Requirements
   The DOTS package was tested (++ successful, -- erroneous) on the following
   platforms with the given compilers, respectively:
 
-  ++ GNU/Linux (Gentoo Linux)    x86_64    gcc 9.1.0 (details omitted)
+  ++ GNU/Linux (Gentoo Linux)    x86_64    gcc 9.2.0 (details omitted)
 
 
 Build & Install
