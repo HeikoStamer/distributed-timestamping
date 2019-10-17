@@ -79,7 +79,7 @@ bool dots_http_request
 					FD_ZERO(&wfds);
 					FD_SET(s, &wfds);
 					struct timeval tv;
-					tv.tv_sec = 3;
+					tv.tv_sec = DOTS_TIME_CONNECT;
 					tv.tv_usec = 0;
 					int retval = select((s + 1), NULL, &wfds, NULL, &tv);
 					if (retval < 0)

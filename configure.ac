@@ -18,7 +18,7 @@
 #
 # (Please process this file with autoconf to produce a configure script.)
 
-AC_REVISION([20191009])
+AC_REVISION([20191017])
 AC_PREREQ(2.61)
 
 AC_INIT([Distributed OpenPGP Timestamping Service], [0.0.2],
@@ -37,6 +37,8 @@ AC_DEFINE_UNQUOTED(VERSION, "$PACKAGE_VERSION", [Version of this package])
 
 # Define some parameters and helping macros
 AC_DEFINE(DOTS_MAX_N, 32, [Define the maximum number of parties/peers])
+AC_DEFINE(DOTS_TIME_CONNECT, 3, [Define the timeout for TCP connect calls\
+ in seconds])
 AC_DEFINE(DOTS_TIME_AUTH, 30, [Define the timeout for authenticating\
  TCP connections in seconds])
 AC_DEFINE(DOTS_TIME_SETUP, 180, [Define the timeout for setup the initial\

@@ -1090,57 +1090,121 @@ bool tcpip_connect
 	}
 	for (rp = res; rp != NULL; rp = rp->ai_next)
 	{
-		int sockfd;
-		if ((sockfd = socket(rp->ai_family, rp->ai_socktype,
-			rp->ai_protocol)) < 0)
+		int sfd = -1;
+		if ((sfd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol)) < 0)
 		{
 			perror("WARNING: tcpip_connect (socket)");
 			continue; // try next address
 		}
-// TODO: reduce connection timeout by using select(2)
-		if (connect(sockfd, rp->ai_addr, rp->ai_addrlen) < 0)
+		int flags = fcntl(sfd, F_GETFL);
+		if (flags < 0)
 		{
-			if (errno != ECONNREFUSED)
-				perror("WARNING: tcpip_connect (connect)");					
-			if (close(sockfd) < 0)
-				perror("WARNING: tcpip_connect (close)");
-			continue; // try next address
+			perror("WARNING: tcpip_connect (fcntl)");
 		}
 		else
 		{
-			char hbuf[NI_MAXHOST], sbuf[NI_MAXSERV];
-			memset(hbuf, 0, sizeof(hbuf));
-			memset(sbuf, 0, sizeof(sbuf));
-			if ((ret = getnameinfo(rp->ai_addr, rp->ai_addrlen,
-				hbuf, sizeof(hbuf), sbuf, sizeof(sbuf),
-				NI_NUMERICHOST | NI_NUMERICSERV)) != 0)
-			{
-				std::cerr << "ERROR: resolving hostname \"" <<
-					peers[peer] << "\" failed: ";
-				if (ret == EAI_SYSTEM)
-					perror("tcpip_connect (getnameinfo)");
-				else
-					std::cerr << gai_strerror(ret);
-				std::cerr << std::endl;
-				if (close(sockfd) < 0)
-					perror("WARNING: tcpip_connect (close)");
-				freeaddrinfo(res);
-				return false;
-			}
-			if (opt_verbose)
-			{
-				std::cerr << "INFO: resolved hostname \"" << peers[peer] <<
-					"\" to address " << hbuf << std::endl;
-				std::cerr << "INFO: connected to host \"" <<
-					peers[peer] << "\" on port " << port << std::endl;
-			}
-			if (broadcast)
-				tcpip_broadcast_pipe2socket_out_auth[peer] = sockfd;
-			else
-				tcpip_pipe2socket_out_auth[peer] = sockfd;
-			freeaddrinfo(res);
-			return true;
+			flags |= O_NONBLOCK;
+			if (fcntl(sfd, F_SETFL) < 0)
+				perror("WARNING: tcpip_connect (fcntl)");
 		}
+		if (connect(sfd, rp->ai_addr, rp->ai_addrlen) < 0)
+		{
+			if ((errno == EINPROGRESS) && (sfd < FD_SETSIZE))
+			{
+				while (1)
+				{
+					fd_set wfds;
+					FD_ZERO(&wfds);
+					FD_SET(sfd, &wfds);
+					struct timeval tv;
+					tv.tv_sec = DOTS_TIME_CONNECT;
+					tv.tv_usec = 0;
+					int retval = select((sfd + 1), NULL, &wfds, NULL, &tv);
+					if (retval < 0)
+					{
+						if ((errno != EAGAIN) && (errno != EINTR))
+						{
+							perror("ERROR: tcpip_connect (select)");
+							if (close(sfd) < 0)
+								perror("WARNING: tcpip_connect (close)");
+							freeaddrinfo(res);
+							return false;
+						}
+					}
+					else if (retval > 0)
+					{
+						socklen_t slen = sizeof(int);
+						int serr = 0;
+						if (getsockopt(sfd, SOL_SOCKET, SO_ERROR,
+							(void*)(&serr), &slen) < 0)
+						{ 
+							perror("ERROR: tcpip_connect (getsockopt)");
+							if (close(sfd) < 0)
+								perror("WARNING: tcpip_connect (close)");
+							freeaddrinfo(res);
+							return false;
+						}
+						if (serr != 0)
+						{
+							errno = serr;
+							perror("ERROR: tcpip_connect (connect)");
+							if (close(sfd) < 0)
+								perror("WARNING: tcpip_connect (close)");
+							freeaddrinfo(res);
+							return false;
+						}
+						else
+							break; // success; leave while-loop
+					}
+					else
+					{
+						if (close(sfd) < 0)
+							perror("WARNING: tcpip_connect (close)");
+						freeaddrinfo(res);
+						return false; // timeout
+					}
+				}
+			}
+			else
+			{
+				if (errno != ECONNREFUSED)
+					perror("WARNING: tcpip_connect (connect)");					
+				if (close(sfd) < 0)
+					perror("WARNING: tcpip_connect (close)");
+				continue; // try next address
+			}
+		}
+		char hbuf[NI_MAXHOST], sbuf[NI_MAXSERV];
+		memset(hbuf, 0, sizeof(hbuf));
+		memset(sbuf, 0, sizeof(sbuf));
+		if ((ret = getnameinfo(rp->ai_addr, rp->ai_addrlen, hbuf, sizeof(hbuf),
+			sbuf, sizeof(sbuf), NI_NUMERICHOST | NI_NUMERICSERV)) != 0)
+		{
+			std::cerr << "ERROR: resolving hostname \"" << peers[peer] <<
+				"\" failed: ";
+			if (ret == EAI_SYSTEM)
+				perror("tcpip_connect (getnameinfo)");
+			else
+				std::cerr << gai_strerror(ret);
+			std::cerr << std::endl;
+			if (close(sfd) < 0)
+				perror("WARNING: tcpip_connect (close)");
+			freeaddrinfo(res);
+			return false;
+		}
+		if (opt_verbose)
+		{
+			std::cerr << "INFO: resolved hostname \"" << peers[peer] <<
+				"\" to address " << hbuf << std::endl;
+			std::cerr << "INFO: connected to host \"" << peers[peer] <<
+				"\" on port " << port << std::endl;
+		}
+		if (broadcast)
+			tcpip_broadcast_pipe2socket_out_auth[peer] = sfd;
+		else
+			tcpip_pipe2socket_out_auth[peer] = sfd;
+		freeaddrinfo(res);
+		return true;
 	}
 	freeaddrinfo(res);
 	return false;
