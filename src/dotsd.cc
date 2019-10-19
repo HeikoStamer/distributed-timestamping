@@ -25,7 +25,8 @@
 
 // copy infos from DOTS package before overwritten by other headers
 static const char *version = PACKAGE_VERSION " (" PACKAGE_NAME ")";
-static const char *about = PACKAGE_STRING " " PACKAGE_URL;
+static const char *about = PACKAGE_STRING;
+static const char *url = PACKAGE_URL;
 static const char *protocol = "DOTS-dotsd-0.0";
 
 #include <sstream>
@@ -69,7 +70,7 @@ int                                dkgpg_fd_in = -1, dkgpg_fd_out = -1;
 int                                dkgpg_fd_err = -1;
 
 std::string                        passwords, hostname, port, URI;
-std::string                        policyfilename;
+std::string                        policyfilename, logfilename;
 std::stringstream                  policyfile;
 std::map<std::string, std::string> map_passwords;
 int                                opt_verbose = 0;
@@ -919,8 +920,8 @@ bool fork_instance
 int main
 	(int argc, char *const *argv, char **envp)
 {
-	static const char *usage =
-		"dotsd [OPTIONS] -P <PASSWORDS> -H <hostname> <PEERS>";
+	static const char *pname = argv[0];
+	static const char *usage = "[OPTIONS] -P <PASSWORDS> -H <hostname> <PEERS>";
 	dkgpg_env = envp;
 
 	// create peer list from remaining arguments
@@ -930,13 +931,19 @@ int main
 		// ignore options
 		if ((arg.find("-p") == 0) || (arg.find("-W") == 0) || 
 			(arg.find("-P") == 0) || (arg.find("-H") == 0) ||
-		    (arg.find("-U") == 0) || (arg.find("-Y") == 0))
+		    (arg.find("-U") == 0) || (arg.find("-Y") == 0) ||
+			(arg.find("-l") == 0))
 		{
 			size_t idx = ++i;
 			if ((arg.find("-H") == 0) && (idx < (size_t)(argc - 1)) &&
 				(hostname.length() == 0))
 			{
 				hostname = argv[i+1];
+			}
+			if ((arg.find("-l") == 0) && (idx < (size_t)(argc - 1)) &&
+				(logfilename.length() == 0))
+			{
+				logfilename = argv[i+1];
 			}
 			if ((arg.find("-P") == 0) && (idx < (size_t)(argc - 1)) &&
 				(passwords.length() == 0))
@@ -970,13 +977,15 @@ int main
 		{
 			if ((arg.find("-h") == 0) || (arg.find("--help") == 0))
 			{
-				std::cout << usage << std::endl;
-				std::cout << about << std::endl;
+				std::cout << pname << " " << usage << std::endl;
+				std::cout << about << std::endl << url << std::endl;
 				std::cout << "Arguments mandatory for long options are also" <<
 					" mandatory for short options." << std::endl;
 				std::cout << "  -h, --help     print this help" << std::endl;
 				std::cout << "  -H STRING      hostname (e.g. onion address)" <<
 					" of this peer within PEERS" << std::endl;
+				std::cout << "  -l FILENAME    write log messages to" <<
+					" FILENAME" << std::endl;
 				std::cout << "  -p INTEGER     start port for" <<
 					" TCP point-to-point channels is INTEGER" << std::endl;
 				std::cout << "  -P STRING      exchanged passwords to" <<
@@ -995,7 +1004,7 @@ int main
 			}
 			if ((arg.find("-v") == 0) || (arg.find("--version") == 0))
 			{
-				std::cout << "dotsd v" << version << std::endl;
+				std::cout << pname << " v" << version << std::endl;
 				return 0; // not continue
 			}
 			if ((arg.find("-V") == 0) || (arg.find("--verbose") == 0))
@@ -1023,20 +1032,27 @@ int main
 	// check command line arguments and options
 	if (peers.size() < 1)
 	{
-		std::cerr << "ERROR: no peers given as argument; usage: " <<
-			usage << std::endl;
+		std::cerr << "ERROR: no peers given as argument; usage: " << pname <<
+			" " << usage << std::endl;
 		return -1;
 	}
 	if (hostname.length() == 0)
 	{
-		std::cerr << "ERROR: no option -H given; usage: " <<
-			usage << std::endl;
+		std::cerr << "ERROR: no option -H given; usage: " << pname <<
+			" " << usage << std::endl;
 		return -1;
+	}
+	if (logfilename.length() == 0)
+	{
+		time_t ct = time(NULL);
+		std::stringstream st;
+		st << pname << "_" << hostname << "_" << (uint32_t)ct << ".log";
+		logfilename = st.str();
 	}
 	if (passwords.length() == 0)
 	{
-		std::cerr << "ERROR: no option -P given; usage: " <<
-			usage << std::endl;
+		std::cerr << "ERROR: no option -P given; usage: " << pname <<
+			" " << usage << std::endl;
 		return -1;
 	}
 	if (port.length())
@@ -1056,9 +1072,8 @@ int main
 				policyfile << line << std::endl;
 			if (!pfs.eof())
 			{
-				std::cerr << "ERROR: cannot read until EOF" <<
-					"of policy file \"" <<
-					policyfilename << "\"" << std::endl;
+				std::cerr << "ERROR: cannot read until EOF of policy file" <<
+					" \"" << policyfilename << "\"" << std::endl;
 				pfs.close();
 				return -1;
 			}
@@ -1066,8 +1081,8 @@ int main
 		}
 		else
 		{
-			std::cerr << "ERROR: cannot open policy file \"" <<
-				policyfilename << "\"" << std::endl;
+			std::cerr << "ERROR: cannot open policy file" <<
+				" \"" << policyfilename << "\"" << std::endl;
 			return -1;
 		}
 	}
@@ -1109,9 +1124,8 @@ int main
 		std::string pwd;
 		if (!TMCG_ParseHelper::gs(passwords, '/', pwd))
 		{
-			std::cerr << "ERROR: cannot read password" <<
-				" for protecting channel to P_" << i <<
-				std::endl;
+			std::cerr << "ERROR: cannot read password for" <<
+				" protecting channel to P_" << i << std::endl;
 			return -1;
 		}
 		key << pwd;
@@ -1119,9 +1133,8 @@ int main
 		if (((i + 1) < peers.size()) &&
 			!TMCG_ParseHelper::nx(passwords, '/'))
 		{
-			std::cerr << "ERROR: cannot skip to next password" <<
-				" for protecting channel to P_" << (i + 1) <<
-				std::endl;
+			std::cerr << "ERROR: cannot skip to next password for" <<
+				" protecting channel to P_" << (i + 1) << std::endl;
 			return -1;
 		}
 	}
