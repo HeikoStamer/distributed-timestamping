@@ -1138,19 +1138,81 @@ int main
 			return -1;
 		}
 	}
+
+	// open log file
+	int fderr = open(logfilename.c_str(), O_RDWR | O_CREAT | O_APPEND, 0600);
+	if (fderr < 0)
+	{
+		perror("ERROR: main (open)");
+		return -1;
+	}
 	
 	// create underlying point-to-point channels over TCP/IP
 	int ret = 0;
 	tcpip_init(hostname);
 	tcpip_bindports((uint16_t)opt_p, false);
 	tcpip_bindports((uint16_t)opt_p, true);
-// TODO: detach from terminal, redirect stdout and stderr, and daemonize itself
-	if (tcpip_fork())
-		ret = tcpip_io();
+	pid_t daemon_pid = fork();
+	if (daemon_pid < 0)
+	{
+		perror("ERROR: main (fork)");
+		ret = -1;
+	}
+	else if (daemon_pid == 0)
+	{
+		pid_t child_pid = setsid();
+		if (child_pid == -1)
+		{
+			perror("ERROR: main (setsid)");
+			ret = -1;
+		}
+		else
+		{
+			signal(SIGHUP, SIG_IGN);
+			daemon_pid = fork();
+			if (daemon_pid < 0)
+			{
+				perror("ERROR: main (fork)");
+				ret = -1;
+			}
+			else if (daemon_pid == 0)
+			{
+				close(fileno(stdin));
+				if (open("/dev/null", O_RDONLY) < 0)
+				{
+					perror("ERROR: main (open)");
+					ret = -1;
+				}
+				else if (dup2(fderr, fileno(stdout)) < 0)
+				{
+					perror("ERROR: main (dup2)");
+					ret = -1;
+				}
+				else if (dup2(fderr, fileno(stderr)) < 0)
+				{
+					perror("ERROR: main (dup2)");
+					ret = -1;
+				}
+				else
+				{
+					fflush(stdout);
+					fflush(stderr);
+					close(fderr);
+					if (tcpip_fork())
+						ret = tcpip_io();
+					else
+						ret = -100; // fork to protocol instance failed
+				}
+			}
+			else
+				return EXIT_SUCCESS;
+		}
+	}
 	else
-		ret = -100; // fork to protocol instance failed
+		return EXIT_SUCCESS;
 	tcpip_close();
 	tcpip_done();
+	close(fderr);
 		
 	return ret;
 }
