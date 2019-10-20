@@ -717,16 +717,15 @@ void tcpip_init
 		perror("ERROR: dots-tcpip-common (sigaction)");
 		exit(-1);
 	}
-	if (MHD_is_feature_supported(MHD_FEATURE_SSL) == MHD_NO)
-	{
-		std::cerr << "ERROR: MHD_FEATURE_SSL not supported" << std::endl;
-		exit(-1);
-	}
 	if (MHD_is_feature_supported(MHD_FEATURE_POSTPROCESSOR) == MHD_NO)
 	{
 		std::cerr << "ERROR: MHD_FEATURE_POSTPROCESSOR not supported" <<
 			std::endl;
 		exit(-1);
+	}
+	if (MHD_is_feature_supported(MHD_FEATURE_SSL) == MHD_NO)
+	{
+		std::cerr << "WARNING: MHD_FEATURE_SSL not supported" << std::endl;
 	}
 	tcpip_mhd = MHD_start_daemon(MHD_NO_FLAG,
 		DOTS_MHD_PORT + tcpip_peer2pipe[tcpip_thispeer],
