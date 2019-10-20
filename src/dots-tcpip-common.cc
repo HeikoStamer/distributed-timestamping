@@ -410,6 +410,10 @@ static int tcpip_mhd_callback
 					tmp << q->first << ":" << (int)q->second << std::endl;
 				}
 			}
+			tmp << std::endl;
+			const union MHD_DaemonInfo *info = MHD_get_daemon_info(tcpip_mhd,
+				MHD_DAEMON_INFO_CURRENT_CONNECTIONS);
+			tmp << info->num_connections << " connections" << std::endl;
 			std::string page = tmp.str();
 			res = MHD_create_response_from_buffer(page.length(),
 				(void*)page.c_str(), MHD_RESPMEM_MUST_COPY);
