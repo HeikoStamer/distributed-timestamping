@@ -18,7 +18,7 @@
 #
 # (Please process this file with autoconf to produce a configure script.)
 
-AC_REVISION([20191017])
+AC_REVISION([20191102])
 AC_PREREQ(2.61)
 
 AC_INIT([Distributed OpenPGP Timestamping Service], [0.0.2],

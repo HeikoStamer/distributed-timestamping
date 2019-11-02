@@ -44,7 +44,7 @@ extern std::stringstream         policyfile;
 extern std::string               passwords;
 extern tcpip_mss_t               map_passwords;
 
-static const size_t              tcpip_pipe_buffer_size = 262144;
+static const size_t              tcpip_pipe_buffer_size = 655360;
 uint16_t                         tcpip_start = 0;
 bool                             tcpip_user_signal_caught = false;
 std::string                      tcpip_thispeer;
@@ -2640,8 +2640,8 @@ int tcpip_io
 				else
 				{
 					len_out[i] += len;
-					if ((opt_verbose > 0) && ((tcpip_pipe_buffer_size -
-						len_out[i]) == 0))
+					if ((opt_verbose > 0) &&
+						((tcpip_pipe_buffer_size - len_out[i]) == 0))
 					{
 						std::cerr << "WARNING: outgoing buffer exceeded" <<
 							std::endl;
