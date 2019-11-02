@@ -7,4 +7,3 @@ no Front-Cover Texts, and no Back-Cover Texts. A copy of the license is included
 in the sources of this package and additionally can be obtained from Internet
 <https://www.gnu.org/licenses>.
 
-chdir() to a configured path (e.g. $prefix/var/lib/dotsd)

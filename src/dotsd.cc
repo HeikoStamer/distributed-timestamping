@@ -39,6 +39,7 @@ static const char *protocol = "DOTS-dotsd-0.0";
 #include <unistd.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <csignal>
@@ -1139,15 +1140,45 @@ int main
 		}
 	}
 
+	// change working directory
+	if (chdir(DOTS_PATH_VAR) < 0)
+	{
+		if (errno == ENOENT)
+		{
+			// create working directory, if not already exists
+			if (mkdir(DOTS_PATH_VAR, S_IRWXU) < 0)
+			{
+				perror("ERROR: main (mkdir)");
+				std::cerr << "ERROR: cannot create working directory" <<
+					" \"" << DOTS_PATH_VAR << "\"" << std::endl;
+				return -1;
+			}
+			else
+			{
+				std::cerr << "INFO: working directory" << " \"" <<
+						DOTS_PATH_VAR << "\" created" << std::endl;
+			}
+		}
+		else
+		{
+			perror("ERROR: main (chdir)");
+			std::cerr << "ERROR: cannot change to working directory" <<
+					" \"" << DOTS_PATH_VAR << "\"" << std::endl;
+			return -1;
+		}
+	}
+
 	// open log file
 	int fderr = open(logfilename.c_str(), O_RDWR | O_CREAT | O_APPEND, 0600);
 	if (fderr < 0)
 	{
 		perror("ERROR: main (open)");
+		std::cerr << "ERROR: cannot create or append to logfile in working" <<
+			" directory" << std::endl;
 		return -1;
 	}
 	
-	// create underlying point-to-point channels over TCP/IP
+	// create underlying point-to-point channels over TCP/IP and daemonize
 	int ret = 0;
 	tcpip_init(hostname);
 	tcpip_bindports((uint16_t)opt_p, false);
@@ -1177,10 +1208,15 @@ int main
 			}
 			else if (daemon_pid == 0)
 			{
-				close(fileno(stdin));
-				if (open("/dev/null", O_RDONLY) < 0)
+				int fdnull = open("/dev/null", O_RDONLY);
+				if (fdnull < 0)
 				{
 					perror("ERROR: main (open)");
+					ret = -1;
+				}
+				else if (dup2(fdnull, fileno(stdin)) < 0)
+				{
+					perror("ERROR: main (dup2)");
 					ret = -1;
 				}
 				else if (dup2(fderr, fileno(stdout)) < 0)

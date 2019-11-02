@@ -44,7 +44,7 @@ extern std::stringstream         policyfile;
 extern std::string               passwords;
 extern tcpip_mss_t               map_passwords;
 
-static const size_t              tcpip_pipe_buffer_size = 655360;
+static const size_t              tcpip_pipe_buffer_size = 393216;
 uint16_t                         tcpip_start = 0;
 bool                             tcpip_user_signal_caught = false;
 std::string                      tcpip_thispeer;
@@ -2975,6 +2975,8 @@ int tcpip_io
 			std::cerr << "ERROR: MHD_run_from_select() failed" << std::endl;
 			return -205;
 		}
+		fflush(stdout);
+		fflush(stderr);
 	} // end of while-loop
 	sleep(5 * DOTS_TIME_POLL); // sleep few seconds to terminate gracefully
 	return -500;
